@@ -49,7 +49,7 @@ fully verifiable.
 ```mermaid
 flowchart TB
     subgraph Reader["Reader Browser"]
-        UI[Next.js App Router UI]
+        UI[Next.js UI]
         Freighter[Freighter Wallet]
         NoirWASM[Noir WASM<br/>@aztec/bb.js]
     end
@@ -77,18 +77,18 @@ flowchart TB
 
 ### Components
 
-| Directory | Stack | Purpose |
+| Component | Stack | Purpose |
 |---|---|---|
-| `app/` | Next.js 14 (App Router) + Freighter | Reader UI: paywall flow, wallet connect, ZK proof generation |
+| `circuits/zk_paywall.nr` | Noir 1.0 | ZK circuit: Pedersen commitment + nullifier + 8-bit range proof |
 | `contracts/verifier/` | Rust + Soroban SDK | On-chain Groth16 verifier using `env.crypto().bn254().pairing_check` |
-| `agent/` | Hermes Skill + MCP server | Pay any URL via Telegram/Discord/WhatsApp/CLI |
-| `circuits/` | Noir 1.0 | ZK circuit: Pedersen commitment + nullifier + 8-bit range proof |
+| `frontend/` | Next.js 14 + Freighter | Reader UI: paywall flow, wallet connect, ZK proof generation |
+| `plugins/veilgate/` | Hermes Skill + MCP server | Pay any URL via Telegram/Discord/WhatsApp/CLI |
 
 ---
 
 ## Technical details
 
-### 1. Noir circuit (circuits/zk_paywall.nr)
+### 1. Noir circuit (zk_paywall.nr)
 
 ```rust
 use std::hash::pedersen_hash;
@@ -128,7 +128,7 @@ fn main(
 }
 ```
 
-### 2. Soroban verifier (contracts/verifier/src/lib.rs)
+### 2. Soroban verifier (Rust)
 
 Uses **Protocol 25 host functions** (`env.crypto().bn254()` — CAP-0074):
 
@@ -165,7 +165,7 @@ pub fn verify(
 }
 ```
 
-### 3. Browser ZK proof generation (app/lib/proof.ts)
+### 3. Browser ZK proof generation
 
 ```typescript
 import { Noir } from '@noir-lang/noir_js';
@@ -178,9 +178,8 @@ const { witness } = await noir.execute(inputs);
 const proof = await backend.generateFinalProof(witness);
 ```
 
-Server-side Node script (scripts/run_circuit.sh) converts UltraHonk to Groth16 for on-chain
-submission (via [jamesbachini/Noir-Groth16](https://github.com/jamesbachini/Noir-Groth16)
-backend).
+Server-side Node script converts UltraHonk to Groth16 for on-chain submission (via
+[jamesbachini/Noir-Groth16](https://github.com/jamesbachini/Noir-Groth16) backend).
 
 ### 4. Encoding
 
@@ -213,7 +212,7 @@ sequenceDiagram
     Note over R,S: Amount hidden.<br/>Publisher confirmed paid.<br/>No double-spend possible.
 ```
 
-### Hermes slash commands (agent/SKILL.md)
+### Hermes slash commands (parallel interface)
 
 ```
 /veilgate pay <url>           # Pay a paywall
@@ -238,14 +237,14 @@ sequenceDiagram
 ## Build (3-day plan)
 
 ### Day 1 — circuit + verifier + tests
-- Write Noir circuit (`circuits/zk_paywall.nr`)
-- Port Soroban verifier from stellar/soroban-examples/groth16_verifier (`contracts/verifier/`)
+- Write Noir circuit
+- Port Soroban verifier from stellar/soroban-examples/groth16_verifier
 - Add unit tests for circuit + verifier
 
-### Day 2 — app/ + agent/
-- Next.js App Router UI with Freighter integration (`app/`)
+### Day 2 — frontend + Hermes plugin
+- Next.js UI with Freighter integration
 - @aztec/bb.js proof generation in browser
-- Hermes SKILL.md + MCP server (`agent/`)
+- Hermes SKILL.md + MCP server (`hermes skills install perkos/veilgate`)
 
 ### Day 3 — deploy + demo
 - Deploy verifier to Stellar testnet
@@ -262,7 +261,6 @@ sequenceDiagram
 - BN254 host fns — github.com/orgs/stellar/discussions/1826 (CAP-0074, Protocol 25)
 - Freighter — @stellar/freighter-api npm
 - Barretenberg — @aztec/bb.js npm
-- Next.js App Router — nextjs.org/docs/app
 - Hermes Skill — hermes-agent.nousresearch.com/docs/user-guide/features/skills
 
 ---
@@ -271,43 +269,30 @@ sequenceDiagram
 
 ```
 VeilGate/
-├── app/                       # Next.js 14 with App Router
-│   ├── app/                   # routes
-│   │   ├── layout.tsx
-│   │   ├── page.tsx           # /  — landing
-│   │   ├── pay/[url]/page.tsx # /pay/[url] — paywall flow
-│   │   └── api/               # route handlers
-│   ├── components/
-│   └── lib/
+├── circuits/
+│   ├── zk_paywall.nr         # Noir circuit
+│   ├── Nargo.toml
+│   └── tests/
 ├── contracts/
-│   └── verifier/              # Soroban verifier (Rust)
+│   └── verifier/             # Soroban verifier (Rust)
 │       ├── Cargo.toml
 │       ├── src/lib.rs
 │       └── src/test.rs
-├── agent/                     # Hermes Skill + MCP server
-│   ├── SKILL.md
-│   ├── veilgate_mcp_server.py
-│   └── requirements.txt
-├── circuits/                  # Noir ZK circuit
-│   ├── zk_paywall.nr
-│   ├── Nargo.toml
-│   └── tests/
+├── frontend/                 # Next.js paywall UI
+│   ├── pages/
+│   ├── components/
+│   └── lib/
+├── plugins/
+│   └── veilgate/             # Hermes skill
+│       ├── SKILL.md
+│       └── veilgate_mcp_server.py
 ├── scripts/
-│   ├── run_circuit.sh         # Noir → Groth16 pipeline
-│   └── verify_stellar.sh      # End-to-end verifier
+│   ├── run_circuit.sh        # Noir → Groth16 pipeline
+│   └── verify_stellar.sh     # End-to-end verifier
 ├── .github/workflows/test.yml
-├── Cargo.toml                 # Workspace root
+├── Cargo.toml                # Workspace root
 └── README.md
 ```
-
-### Directory convention
-
-| Directory | Purpose | Stack |
-|---|---|---|
-| `app/` | Next.js App Router (UI + API routes) | TypeScript, React 18 |
-| `contracts/` | Soroban smart contracts | Rust, soroban-sdk |
-| `agent/` | Hermes plugin (SKILL.md + MCP server) | Python (MCP) |
-| `circuits/` | Noir ZK circuits (separate because they don't fit cleanly into app/ or contracts/) | Noir |
 
 ---
 
