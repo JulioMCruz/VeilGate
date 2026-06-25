@@ -1,18 +1,19 @@
 # contracts/pool — VeilGate shielded pool (real on-chain settlement)
 
-The contract that makes the payment **actually move value on testnet**. Fixed-denomination
-shielded pool (Tornado / Privacy-Pools style): real tokens move; the link between a payment
+The contract that makes the payment **actually move value on testnet**. A
+fixed-denomination shielded pool: real tokens move; the link between a payment
 and its deposit stays private (unlinkable); the per-note amount is the public fixed denomination.
 
 ## Interface
 
 | Function | What it does |
 |---|---|
-| `__constructor(admin, token, denom, vk_alpha, vk_beta, vk_gamma, vk_delta, vk_ic)` | Set token (SAC), fixed denomination, admin, and the withdraw circuit's VK |
-| `deposit(from, commitment) -> u32` | Pull `denom` of the token from `from`, register `commitment`, return leaf index |
-| `push_root(root)` | Admin publishes a Merkle root (tree built off-chain from `deposit` events) |
-| `withdraw(proof_a, proof_b, proof_c, root, nullifier_hash, recipient_field, recipient)` | Verify the Groth16 proof on-chain, ensure the nullifier is unspent, transfer `denom` to `recipient` |
-| `is_root(root) -> bool`, `is_spent(nullifier_hash) -> bool` | Views |
+| `__constructor(token, denom, vk_alpha, vk_beta, vk_gamma, vk_delta, vk_ic)` | Set token (SAC), fixed denomination, and the withdraw circuit's VK; init the on-chain tree |
+| `deposit(from, commitment) -> u32` | Pull `denom` of the token from `from`, insert `commitment` into the on-chain Merkle tree (**recomputes the root**), return leaf index |
+| `withdraw(proof_a, proof_b, proof_c, root, nullifier_hash, recipient_field, recipient)` | Verify the Groth16 proof on-chain against a recent root, ensure the nullifier is unspent, transfer `denom` to `recipient` |
+| `is_known_root(root) -> bool`, `is_spent(nullifier_hash) -> bool`, `current_root() -> BytesN<32>` | Views |
+
+There is **no `push_root` / admin** — the contract anchors the root itself (see Trust model).
 
 Withdraw runs the Groth16/BN254 pairing check inline via the native host functions
 (`g1_mul`, `g1_add`, `pairing_check`) — the only ZK path that fits the testnet per-tx budget.
@@ -46,16 +47,23 @@ stellar contract deploy --wasm target/wasm32v1-none/release/pool.wasm --source <
   --admin <addr> --token <token SAC> --denom 1000000 \
   --vk_alpha <hex> --vk_beta <hex> --vk_gamma <hex> --vk_delta <hex> --vk_ic '[<hex>,…]'
 
-# 3. deposit -> push_root -> withdraw (values from /tmp/pool_demo.env)
+# 3. deposit (recomputes the root on-chain) -> withdraw (values from /tmp/pool_demo.env)
 ```
 
-## Trust model & roadmap
+## Trust model — TRUSTLESS
 
-MVP: the admin publishes Merkle roots (the tree is built off-chain from on-chain `deposit`
-events). Real value, real ZK gate, real double-spend protection; the residual trust is that
-the admin publishes a root over the genuine deposit set.
+The pool maintains an **on-chain incremental Merkle tree with a recent-root history**
+(`merkle.rs`). On every `deposit` the contract **recomputes the root itself** using the
+native Poseidon host function via `env.crypto_hazmat()` (feature `hazmat-crypto`) —
+bit-for-bit compatible with the circuit's Poseidon (validated). So:
 
-Fully trustless variant recomputes the root **on-chain** with the circuit's hash. The native
-Soroban Poseidon (`poseidon_permutation`) is parameterizable to match the circuit, but its
-`CryptoHazmat` constructor is not yet publicly exposed in the SDK — so the on-chain tree (or a
-pure-Rust MiMC tree matching a MiMC circuit) is the next step.
+- **No operator, no off-chain trust.** The root is anchored to real deposits by the contract.
+- `withdraw` accepts a proof against any of the last `ROOT_HISTORY` (30) roots.
+
+The earlier admin-anchored variant is removed.
+
+Verified on testnet: a `deposit` recomputed the exact root the off-chain prover expected
+(`0c2b8935…fb827c3a`), and `withdraw` paid the publisher **without any `push_root`** —
+publisher balance `10000.1 -> 10000.2 XLM`.
+
+Trustless pool: `CBFFBAZFR4ZN5F6CZPLK2QKNAGI674FQSMLOO2UEBO7M5WAE6PCHA2EW`

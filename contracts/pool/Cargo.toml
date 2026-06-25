@@ -10,10 +10,10 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-soroban-sdk = { workspace = true }
+soroban-sdk = { workspace = true, features = ["hazmat-crypto"] }
 
 [dev-dependencies]
-soroban-sdk = { workspace = true, features = ["testutils"] }
+soroban-sdk = { workspace = true, features = ["testutils", "hazmat-crypto"] }
 
 [features]
 testutils = ["soroban-sdk/testutils"]
