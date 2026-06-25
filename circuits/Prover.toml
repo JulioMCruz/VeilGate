@@ -1,0 +1,20 @@
+# Canonical valid witness for the VeilGate paywall circuit.
+# Values match `test_valid_payment_proof_succeeds` in src/main.nr.
+#   secret=0x1234, nullifier=0xabcd, amount=100, publisher=(0xdead,0xbeef)
+# The public hashes were produced by the circuit's own Pedersen helpers.
+#
+# Run: `nargo execute` (solves the witness) — used by scripts/prove_ultrahonk.mjs.
+
+commitment = "0x18701ce0a78aff02bf2b73959260d84aae16f87d336c96a967627a8269b4e707"
+nullifier_hash = "0x231369b7748afd529207ce7cab8686c85cf1d106a2b21bc0fa783711c55450bc"
+publisher_pubkey_x = "0xdead"
+publisher_pubkey_y = "0xbeef"
+merkle_root = "0x0b42bb1d3eb2bcd24f6cebed16dee42a8e2decc684e03021967f35594fec9e28"
+amount_range_bit = "1"
+
+secret = "0x1234"
+nullifier = "0xabcd"
+amount = "100"
+
+merkle_path = ["0x0","0x0","0x0","0x0","0x0","0x0","0x0","0x0","0x0","0x0","0x0","0x0","0x0","0x0","0x0","0x0","0x0","0x0","0x0","0x0"]
+merkle_indices = ["0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0","0"]

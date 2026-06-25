@@ -1,0 +1,14 @@
+{
+  "name": "veilgate-scripts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "VeilGate proving harness (Noir-native UltraHonk via bb.js)",
+  "scripts": {
+    "prove": "node prove_ultrahonk.mjs"
+  },
+  "dependencies": {
+    "@aztec/bb.js": "0.87.2",
+    "@noir-lang/noir_js": "1.0.0-beta.9"
+  }
+}
