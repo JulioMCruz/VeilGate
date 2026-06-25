@@ -107,14 +107,12 @@ nargo info             # → ~190 ACIR opcodes for main
 > Groth16. The two paths below differ in how this circuit's proof reaches the chain.
 
 1. **UltraHonk (Noir-native, recommended).** Prove with `bb` and verify with an UltraHonk
-   Soroban verifier. The Stellar ZK docs link the
-   [indextree/ultrahonk_soroban_contract](https://github.com/indextree/ultrahonk_soroban_contract)
-   as the reference Noir verifier. This avoids any proof-system conversion.
+   Soroban verifier (the Noir-native path the Stellar ZK docs point to). This avoids any
+   proof-system conversion. See `contracts/ULTRAHONK_ONCHAIN.md`.
 
 2. **Groth16 (currently deployed).** `contracts/verifier/` is a working Groth16/BN254
    verifier deployed to testnet (`CAW4VAGEOBMQIOVFJD354BXN5O3LRP3GZGMCDEPZDNQKDUN7TZYAR45V`).
-   Using it with **this** Noir circuit requires lowering ACIR → Groth16 (e.g.
-   [jamesbachini/Noir-Groth16](https://github.com/jamesbachini/Noir-Groth16)), which is the
+   Using it with **this** Noir circuit requires lowering ACIR → Groth16, which is the
    fragile link. The Groth16 verifier is independently correct and proven with a real
    arkworks-generated BN254 vector — see `contracts/verifier/src/test.rs`.
 

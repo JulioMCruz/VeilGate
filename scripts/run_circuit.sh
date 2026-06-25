@@ -15,13 +15,10 @@
 # Requires:
 #   - nargo (Noir 1.0+)
 #   - snarkjs (npm install -g snarkjs)
-#   - The jamesbachini/Noir-Groth16 backend binary
-#     (build from https://github.com/jamesbachini/Noir-Groth16)
+#   - An ACIR -> Groth16 lowering backend binary
 #
-# Reference:
-#   - https://jamesbachini.com/noir-groth16/
-#   - https://github.com/jamesbachini/Noir-Groth16
-#   - https://github.com/stellar/soroban-examples/tree/main/groth16_verifier
+# Note: for the Noir-native path (no Groth16 conversion) see
+#       contracts/ULTRAHONK_ONCHAIN.md instead.
 
 set -euo pipefail
 
@@ -57,7 +54,7 @@ if [ ! -f "${PTAU_FILE}" ]; then
 fi
 
 echo "==> [4/5] Generating Groth16 proof"
-# Uses jamesbachini/Noir-Groth16 backend which lowers ACIR → R1CS → Groth16
+# Uses an ACIR -> R1CS -> Groth16 lowering backend
 NOIR_GROTH16_BIN="${NOIR_GROTH16_BIN:-noir-groth16}"
 if command -v "${NOIR_GROTH16_BIN}" >/dev/null 2>&1; then
   "${NOIR_GROTH16_BIN}" prove \
@@ -68,10 +65,8 @@ if command -v "${NOIR_GROTH16_BIN}" >/dev/null 2>&1; then
   echo "    Artifacts in ${GROTH16_DIR}:"
   ls -la "${GROTH16_DIR}"
 else
-  echo "    noir-groth16 CLI not found. Install from:"
-  echo "    https://github.com/jamesbachini/Noir-Groth16"
-  echo ""
-  echo "    Or set NOIR_GROTH16_BIN=/path/to/noir-groth16"
+  echo "    noir-groth16 CLI not found."
+  echo "    Set NOIR_GROTH16_BIN=/path/to/your/acir-to-groth16-backend"
 fi
 
 echo "==> [5/5] Encoding for Soroban (byte sequences)"

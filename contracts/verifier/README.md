@@ -26,8 +26,8 @@ contracts/verifier/
 ## Verification key (Groth16)
 
 The verification key is **embedded in the contract at compile time** by reading the
-`verification_key.json` emitted by `scripts/run_circuit.sh` (via
-[jamesbachini/Noir-Groth16](https://github.com/jamesbachini/Noir-Groth16)).
+`verification_key.json` emitted by the ACIR → Groth16 lowering step in
+`scripts/run_circuit.sh`.
 
 Structure:
 
@@ -65,7 +65,7 @@ env.crypto().bn254().pairing_check(                    // CAP-0074, P25
 ) -> bool
 ```
 
-Reference: <https://github.com/orgs/stellar/discussions/1826>
+Reference: Stellar BN254 host functions (CAP-0074, Protocol 25).
 
 ## Build
 
