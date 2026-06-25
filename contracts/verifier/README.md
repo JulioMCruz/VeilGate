@@ -1,15 +1,28 @@
-# VeilGate — Soroban Groth16 verifier
+# VeilGate — standalone Soroban Groth16/BN254 verifier
 
-On-chain verifier for the VeilGate private paywall. Verifies Groth16 proofs over the BN254
-curve using **Protocol 25 host functions** (`env.crypto().bn254()` — CAP-0074).
+A **standalone, stateless** on-chain verifier for Groth16 proofs over the BN254
+curve, using **Protocol 25 host functions** (`env.crypto().bn254()` — CAP-0074).
+
+> **Reference / earlier verifier.** This is the standalone verifier that proved
+> out the Groth16-on-Soroban encoding bridge on testnet. The **live shielded
+> pool** (`../pool/`) carries its **own inline** Groth16/BN254 verification
+> (`g1_mul` / `g1_add` / `pairing_check` inside `withdraw`), so it does not call
+> this contract at runtime. Keep this one as the reference / test verifier.
+
+**Deployed (testnet):** `CAW4VAGEOBMQIOVFJD354BXN5O3LRP3GZGMCDEPZDNQKDUN7TZYAR45V`
 
 ## What this contract does
 
-Accepts a Groth16 proof + public inputs, computes the linear combination `vk_x`, and calls
-`env.crypto().bn254().pairing_check(...)` to verify the proof. Returns `bool`.
+Accepts a Groth16 proof `(A, B, C)` + verification key + public inputs, computes the
+linear combination `vk_x = IC[0] + Σ public_input[i]·IC[i+1]`, and runs
+`env.crypto().bn254().pairing_check(...)`. Returns `bool`. It is a **pure function**:
+it does not move tokens, and it stores no commitments or nullifiers — the Merkle root
+is just one of the public inputs passed in by the caller.
 
-This is the on-chain gate that says "yes, this is a valid ZK proof" without ever revealing
-the payment amount.
+This is the on-chain gate that says "yes, this is a valid ZK proof." In VeilGate that
+proof attests to deposit↔payment **unlinkability** (membership + a fresh nullifier +
+a recipient binding) — the denomination is public, so this verifier is not hiding any
+amount; it is proving the withdrawal corresponds to *some* deposit in the pool.
 
 ## File layout
 
@@ -82,6 +95,9 @@ cargo test
 ```
 
 ## Deploy (testnet)
+
+Already deployed at `CAW4VAGEOBMQIOVFJD354BXN5O3LRP3GZGMCDEPZDNQKDUN7TZYAR45V`.
+To deploy your own:
 
 ```bash
 stellar contract deploy \

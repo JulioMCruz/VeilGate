@@ -1,8 +1,19 @@
-# circuits/ — Noir ZK circuit for VeilGate
+# circuits/ — Noir circuit (earlier exploration, NOT the live path)
 
-The zero-knowledge circuit that proves a payment is valid without revealing the amount.
+> **Status: earlier exploration — not the live settlement path.**
+> This is a Noir + Barretenberg **UltraHonk** circuit from an early design pass. On-chain
+> UltraHonk verification **exceeds the Stellar testnet per-transaction budget** — it runs
+> only on a localnet with raised resource limits. The **live product settles through the
+> Groth16 path in [`../pool/`](../pool/README.md)** (Circom + snarkjs, a `Withdraw(20)`
+> circuit verified on testnet). Keep that in mind while reading; this directory is kept for
+> reference and history, not for the deployed flow.
 
 ## What it proves
+
+VeilGate's privacy property is **unlinkability** (a payout cannot be linked back to the
+deposit that funded it) plus identity hiding. The note **amount/denomination is public** —
+this circuit does **not** keep the amount secret. The range check below only proves the
+amount sits within a fixed bucket; it does not hide the value.
 
 Given private inputs `(secret, nullifier, amount, merkle_path, merkle_indices)` and public
 inputs `(commitment, nullifier_hash, publisher_pubkey_(x,y), merkle_root, amount_range_bit)`,
@@ -13,7 +24,8 @@ the circuit enforces (every check is a real constraint — none are decorative):
    Folding the publisher pubkey into the nullifier hash binds the spend to one publisher,
    so a proof cannot be replayed to a different publisher, and the spent-set is scoped per
    publisher.
-3. **Amount fits in 8 bits**: `amount ∈ [0, 255]` (centi-cents, range proof)
+3. **Amount fits in 8 bits**: `amount ∈ [0, 255]` (a public-bucket range proof — it proves
+   the amount is in range, it does not conceal it)
 4. **Commitment membership**: a Merkle proof that `commitment` is in the publisher's
    published commitment set, enforced against the public `merkle_root`.
 
@@ -42,7 +54,7 @@ circuits/
 | `amount_range_bit` | `u8` | public | Must be `1`; asserts "amount is in range" |
 | `secret` | `Field` | **private** | Random per-payment |
 | `nullifier` | `Field` | **private** | Random per-payment, revealed only as a hash |
-| `amount` | `Field` | **private** | Payment amount (hidden on-chain) |
+| `amount` | `Field` | private witness | The amount; supplied as a witness for the range/commitment checks (the value itself is **not** kept secret by VeilGate — the denomination is public) |
 | `merkle_path` | `[Field; 20]` | **private** | Sibling hashes for the membership proof |
 | `merkle_indices` | `[u1; 20]` | **private** | Left/right direction bits |
 
@@ -60,13 +72,13 @@ assert(reconstructed == amount, "amount not in 8-bit range");
 ```
 
 `to_le_bits::<8>()` itself constrains the value to 8 bits (it traps on an out-of-range
-amount), and the explicit reconstruction is a documented defense-in-depth check.
+amount), and the explicit reconstruction is a documented defense-in-depth check. This
+proves the amount is in range; it is not an amount-hiding mechanism.
 
 ## Pedersen commitments
 
 Uses Noir's `std::hash::pedersen_hash([x, y, ...])`, a BabyJubJub-based hash over the
-BN254 scalar field — the same primitive used by Aztec, Tornado Cash, and most production
-privacy protocols.
+BN254 scalar field.
 
 Source: <https://noir-lang.org/docs/noir/standard_library/cryptographic_primitives/hashes>
 
@@ -74,7 +86,7 @@ Source: <https://noir-lang.org/docs/noir/standard_library/cryptographic_primitiv
 
 ### Prerequisites
 - [`nargo` (Noir 1.0+)](https://noir-lang.org/docs/getting_started/installation) — tested with `1.0.0-beta.9`
-- Optionally: [`bb` (Barretenberg)](https://github.com/AztecProtocol/aztec-packages) for proving
+- Optionally: [`bb` (Barretenberg)](https://github.com/AztecProtocol/aztec-packages) for UltraHonk proving
 
 ### Test the circuit
 
@@ -97,37 +109,27 @@ The 5 tests **execute `main()`** with concrete witnesses (not just helpers):
 
 ```bash
 cd circuits
-nargo compile          # → target/zk_paywall.json (ACIR bytecode)
-nargo info             # → ~190 ACIR opcodes for main
+nargo compile          # → target/*.json (ACIR bytecode)
+nargo info             # opcode/gate counts for main
 ```
 
-## On-chain verification — two paths
+## Why this is not the live path
 
-> **Important (verified June 2026):** Noir proves with **UltraHonk** (Barretenberg), not
-> Groth16. The two paths below differ in how this circuit's proof reaches the chain.
-
-1. **UltraHonk (Noir-native, recommended).** Prove with `bb` and verify with an UltraHonk
-   Soroban verifier (the Noir-native path the Stellar ZK docs point to). This avoids any
-   proof-system conversion. See `contracts/ULTRAHONK_ONCHAIN.md`.
-
-2. **Groth16 (currently deployed).** `contracts/verifier/` is a working Groth16/BN254
-   verifier deployed to testnet (`CAW4VAGEOBMQIOVFJD354BXN5O3LRP3GZGMCDEPZDNQKDUN7TZYAR45V`).
-   Using it with **this** Noir circuit requires lowering ACIR → Groth16, which is the
-   fragile link. The Groth16 verifier is independently correct and proven with a real
-   arkworks-generated BN254 vector — see `contracts/verifier/src/test.rs`.
-
-Deciding between (1) and (2) for VeilGate is an open architectural choice tracked in the
-project notes.
+Noir proves with **UltraHonk** (Barretenberg), not Groth16. Verifying an UltraHonk proof
+on-chain costs more than a single Stellar testnet transaction's resource budget allows, so
+it is viable only on a localnet with raised limits. Rather than depend on that — or on a
+fragile ACIR → Groth16 lowering of this circuit — VeilGate ships the **Circom + Groth16**
+`Withdraw(20)` circuit in [`../pool/`](../pool/README.md), which verifies within the testnet
+budget via the native BN254 host functions. This Noir circuit remains an earlier exploration
+kept for reference.
 
 ## Security notes
 
-- This circuit has not been audited. Do not use in production with real funds.
-- The **publisher binding** is now enforced (publisher pubkey folded into the nullifier
-  hash). A stronger variant would EdDSA-verify a publisher signature inside the circuit.
+- This circuit has not been audited and is not on the live path. Do not use with real funds.
+- The **publisher binding** is enforced (publisher pubkey folded into the nullifier hash).
+  A stronger variant would EdDSA-verify a publisher signature inside the circuit.
 - The Merkle proof is **commitment membership** (allow-list), depth hardcoded to 20.
-  Adjust to match the deployed commitment-set depth.
-- 8-bit amount range (`$0.00–$2.55`) is an MVP choice; widening to a Bulletproof-style
-  range keeps the same commitment scheme.
+- The 8-bit amount range is an MVP bucket choice; the amount is public regardless.
 
 ## License
 
