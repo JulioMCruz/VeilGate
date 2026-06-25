@@ -2,45 +2,63 @@
 
 > Pay any content. Reveal nothing.
 
-A privacy-preserving paywall built on Stellar that lets readers pay for premium content
-(articles, research reports, API endpoints, datasets) without revealing the payment amount
-to the publisher or to on-chain observers. Zero-knowledge proofs hide what you paid, while
-the publisher still gets paid in full.
+A privacy-preserving paywall on Stellar that lets readers pay for premium content
+(articles, research, API endpoints, datasets) **without revealing the payment amount** to
+the publisher or to on-chain observers. A zero-knowledge proof hides what you paid; the
+publisher still gets a payment they can verify is real.
 
-Built for the **Stellar Hacks: Real-World ZK** hackathon (deadline 29 jun 2026 19:00 UTC).
+Built for the **Stellar Hacks: Real-World ZK** hackathon (deadline 29 Jun 2026 19:00 UTC).
 
 ---
 
 ## Problem
 
-Publishers want to monetize content. Readers want privacy. Today you have to choose:
+Publishers want to monetize content. Readers want privacy. Today you choose one:
 
-- **Stripe / credit card** — publisher sees your card, your email, your real identity, the
-  exact amount, your purchase history. Banks see the same.
+- **Stripe / credit card** — the publisher and the bank see your card, email, identity, the
+  exact amount, and your purchase history.
 - **Crypto on-chain** — anyone can see exactly how much you paid, when, and to whom. Worse
-  than credit cards for privacy.
-- **Subscriptions** — leak reading habits, require identity at signup, take 30% cut.
+  than cards for privacy.
+- **Subscriptions** — leak reading habits, require identity at signup, take a large cut.
 
 Privacy-respecting payment for content is unsolved on Stellar. ZK proofs make it possible:
-the publisher gets a payment they can verify is real, but the amount is hidden.
+the publisher gets a payment they can verify, but the amount stays hidden.
 
 ## Solution
 
-VeilGate is a paywall that uses **Groth16 / BN254 zero-knowledge proofs verified on Soroban
-(Stellar smart contracts)** to hide the payment amount while keeping the payment itself
-fully verifiable.
+VeilGate uses a **zero-knowledge proof, generated in the reader's browser and verified by a
+Soroban smart contract**, to hide the payment amount while keeping the payment verifiable.
 
-**What the publisher sees:**
-- "Someone paid"
-- A nullifier (proves no double-spend, never reveals who)
-- A Merkle root (proves the payment is part of the published commitment set)
+**What the publisher sees**
+- That *someone* paid.
+- A **publisher-bound nullifier** (prevents double-spend; can't be replayed to another publisher; never reveals who).
+- A **Merkle root** proving the payment commitment is in the published commitment set.
 
-**What the publisher does NOT see:**
-- How much you paid (only that it was within the agreed range)
-- Your wallet address (one-time commitment, not linked to your identity)
+**What the publisher does NOT see**
+- How much you paid — only that it's within the agreed range.
+- Your wallet identity — the commitment is one-time and unlinked.
 
-**What the on-chain observer sees:**
-- A Soroban `verify()` call that returns true. No amount, no parties.
+**What an on-chain observer sees**
+- A Soroban verification call that returns `true`. No amount, no parties.
+
+---
+
+## Status — what actually works
+
+| Piece | State |
+|---|---|
+| **ZK circuit** (Noir) | ✅ Real, enforced constraints; 5 tests execute `main()` |
+| **Browser proving** (Barretenberg) | ✅ Real UltraHonk proof generated + verified in-browser (~14.5 KB) |
+| **On-chain verify — Groth16/BN254** | ✅ Deployed + verified on **testnet** with a real proof vector |
+| **On-chain verify — UltraHonk (Noir-native)** | ✅ Verified on-chain on **localnet**; exceeds testnet's per-tx budget (see note) |
+| **Next.js app** | ✅ Builds; reader generates a real proof, amount never leaves the device |
+
+> **Honest finding.** UltraHonk verification runs in-wasm and is compute-heavy: on testnet it
+> exceeds the per-transaction budget, so it runs on a localnet with raised limits (or a future,
+> cheaper protocol version). The Groth16 verifier uses the **native** BN254 host functions
+> (`pairing_check`) and verifies fine on testnet. Both paths are real; they trade off differently.
+
+**Deployed Groth16 verifier (testnet):** `CAW4VAGEOBMQIOVFJD354BXN5O3LRP3GZGMCDEPZDNQKDUN7TZYAR45V`
 
 ---
 
@@ -49,219 +67,69 @@ fully verifiable.
 ```mermaid
 flowchart TB
     subgraph Reader["Reader Browser"]
-        UI["Next.js UI"]
-        Freighter["Freighter Wallet"]
-        NoirWASM["Noir WASM @aztec/bb.js"]
+        UI["Next.js 14 UI"]
+        BB["Barretenberg WASM (bb.js)"]
+        FW["Freighter Wallet"]
     end
 
-    subgraph Publisher["Publisher Server"]
-        Gateway["Paywall Gateway Express/Next API"]
-        Bearer["Bearer Token Issuer"]
+    subgraph Stellar["Stellar Soroban"]
+        VH["UltraHonk verifier (localnet)"]
+        VG["Groth16/BN254 verifier (testnet)"]
+        HF["BN254 host functions (Protocol 25)"]
     end
 
-    subgraph Stellar["Stellar Network"]
-        Soroban["Soroban Verifier env.crypto().bn254"]
-        SAC["USDC SAC"]
-    end
-
-    UI -->|"1. Click pay"| NoirWASM
-    NoirWASM -->|"2. Generate commitment nullifier ZK proof"| UI
-    UI -->|"3. Sign Soroban tx"| Freighter
-    Freighter -->|"4. Submit verify_proof"| Soroban
-    Soroban -->|"5. Pairing check OK"| Gateway
-    Gateway -->|"6. transfer USDC to publisher"| SAC
-    SAC -->|"7. Lock complete"| Gateway
-    Gateway -->|"8. Emit event Bearer token"| Bearer
-    Bearer -->|"9. Token + content"| UI
-```
-
-### Components
-
-| Component | Stack | Purpose |
-|---|---|---|
-| `circuits/zk_paywall.nr` | Noir 1.0 | ZK circuit: Pedersen commitment + nullifier + 8-bit range proof |
-| `contracts/verifier/` | Rust + Soroban SDK | On-chain Groth16 verifier using `env.crypto().bn254().pairing_check` |
-| `frontend/` | Next.js 14 + Freighter | Reader UI: paywall flow, wallet connect, ZK proof generation |
-| `plugins/veilgate/` | Hermes Skill + MCP server | Pay any URL via Telegram/Discord/WhatsApp/CLI |
-
----
-
-## Technical details
-
-### 1. Noir circuit (zk_paywall.nr)
-
-```rust
-use std::hash::pedersen_hash;
-
-fn main(
-    // PUBLIC inputs (visible on-chain)
-    commitment: pub Field,
-    nullifier_hash: pub Field,
-    publisher_pubkey_x: pub Field,
-    publisher_pubkey_y: pub Field,
-    merkle_root: pub Field,
-    amount_range_bit: pub u8,
-    // PRIVATE inputs (kept secret)
-    secret: Field,
-    nullifier: Field,
-    amount: Field,
-) {
-    // Commitment well-formedness
-    let computed_commit = pedersen_hash([secret, nullifier, amount]);
-    assert(computed_commit == commitment);
-
-    // Bound to publisher pubkey (prevents replay to different publisher)
-    let pub_hash = pedersen_hash([publisher_pubkey_x, publisher_pubkey_y]);
-    assert_eq(pub_hash, pedersen_hash([commitment, pub_hash]));
-
-    // Nullifier well-formedness
-    assert_eq(pedersen_hash([nullifier]), nullifier_hash);
-
-    // 8-bit range proof (amount in [0, 255] centi-cents)
-    let bits: [u1; 8] = amount.to_le_bits();
-    let mut reconstructed: Field = 0;
-    for i in 0..8 {
-        reconstructed = reconstructed + (bits[i] as Field) * (1 << i);
-    }
-    assert_eq(reconstructed, amount);
-    assert_eq(amount_range_bit, 1);
-}
-```
-
-### 2. Soroban verifier (Rust)
-
-Uses **Protocol 25 host functions** (`env.crypto().bn254()` — CAP-0074):
-
-```rust
-pub fn verify(
-    env: Env,
-    proof_a: BytesN<64>,
-    proof_b: BytesN<128>,
-    proof_c: BytesN<64>,
-    vk_alpha: BytesN<64>,
-    vk_beta: BytesN<128>,
-    vk_gamma: BytesN<128>,
-    vk_delta: BytesN<128>,
-    vk_gamma_abc: Vec<BytesN<64>>,
-    public_inputs: Vec<BytesN<32>>,
-) -> bool {
-    // Compute vk_x = IC[0] + sum(public_input[i] * IC[i+1])
-    let mut vk_x = vk_gamma_abc.get(0).unwrap();
-    for (i, input) in public_inputs.iter().enumerate() {
-        let ic = vk_gamma_abc.get((i + 1) as u32).unwrap();
-        let scaled = env.crypto().bn254().g1_mul(ic.clone(), input.clone());
-        vk_x = env.crypto().bn254().g1_add(vk_x.clone(), scaled);
-    }
-
-    // Pairing check: e(-A, B) * e(α, β) * e(vk_x, γ) * e(C, δ) == 1
-    let neg_a = Self::negate_g1(&env, proof_a.clone());
-    let pairs = vec![
-        &env, (neg_a, proof_b.clone()),
-        (vk_alpha, vk_beta),
-        (vk_x, vk_gamma),
-        (proof_c, vk_delta),
-    ];
-    env.crypto().bn254().pairing_check(pairs)
-}
-```
-
-### 3. Browser ZK proof generation
-
-```typescript
-import { Noir } from '@noir-lang/noir_js';
-import { Barretenberg, UltraHonkHonkBackend } from '@aztec/bb.js';
-
-const bb = await Barretenberg.new({ threads: navigator.hardwareConcurrency });
-const backend = new UltraHonkHonkBackend(circuit.bytecode, bb);
-const noir = new Noir(circuit, backend);
-const { witness } = await noir.execute(inputs);
-const proof = await backend.generateFinalProof(witness);
-```
-
-Server-side Node script converts UltraHonk to Groth16 for on-chain submission (via
-[jamesbachini/Noir-Groth16](https://github.com/jamesbachini/Noir-Groth16) backend).
-
-### 4. Encoding
-
-G1: 64 bytes big-endian, `X(32) || Y(32)`, no flag bits.
-G2: 128 bytes big-endian, `X.c0(32) || X.c1(32) || Y.c0(32) || Y.c1(32)`.
-Field: 32 bytes big-endian.
-
----
-
-## User workflow
-
-```mermaid
-sequenceDiagram
-    participant R as Reader
-    participant W as Wallet Freighter
-    participant P as Publisher
-    participant S as Stellar Soroban
-
-    R->>P: GET /premium-article
-    P-->>R: 402 Payment Required publisher_pubkey price_hash
-    R->>R: Generate commitment nullifier amount client-side WASM
-    R->>W: Sign verify_proof tx
-    W-->>R: signed XDR
-    R->>S: Submit tx
-    S->>S: pairing_check == true
-    S-->>R: TX confirmed event
-    R->>P: POST redeem nullifier_hash proof
-    P->>P: Mark nullifier spent
-    P-->>R: Bearer token plus content
-    Note over R,S: Amount hidden. Publisher confirmed paid. No double-spend possible.
-```
-
-### Hermes slash commands (parallel interface)
-
-```
-/veilgate pay <url>           # Pay a paywall
-/veilgate wallet              # Check balance
-/veilgate history             # Show commitments (no amounts)
-/veilgate shield <amount>     # Pre-mint commitment
-/veilgate verify <proof>      # Debug a proof
+    UI -->|"1. sample secret, nullifier, amount"| BB
+    BB -->|"2. Pedersen commitment + nullifier + UltraHonk proof"| UI
+    UI -->|"3. verify proof"| VH
+    UI -. "alt: Groth16 path" .-> VG
+    VG --> HF
+    UI -->|"4. unlock content"| UI
 ```
 
 ---
 
-## Hackathon fit (Stellar Hacks ZK criteria)
+## How it works
 
-- **Real-world ZK** — load-bearing privacy primitive, not marketing. Hides amounts.
-- **Novel** — first paywall on Stellar using BN254 host functions (Protocol 25).
-- **Working** — Soroban verifier deployed to testnet, full end-to-end demo.
-- **Open source** — MIT, all code public.
-- **Builder-friendly** — single circuit, single verifier, copy-paste deploy.
+### 1. ZK circuit (`circuits/`, Noir)
+
+`main` proves, in zero knowledge, that the prover:
+
+1. **Knows the opening** of a public commitment: `commitment = Pedersen(secret, nullifier, amount)`.
+2. **Derived a publisher-bound nullifier**: `nullifier_hash = Pedersen(nullifier, pub_x, pub_y)`
+   — so a proof can't be replayed to a different publisher, and the spent-set is scoped per publisher.
+3. **Amount is in range**: 8-bit range proof (`0..255` centi-cents).
+4. **Commitment is a member** of the publisher's published set: a Merkle proof against a public
+   `merkle_root`, enforced.
+
+Every check is a real constraint. `nargo test` runs 5 tests that **execute `main()`** with concrete
+witnesses (valid → satisfies; wrong secret, replayed publisher, out-of-range amount, and wrong root → rejected).
+
+### 2. Browser proving (`app/lib/proof.ts`, Barretenberg)
+
+The reader's browser samples `(secret, nullifier, amount)`, computes the public inputs with
+`bb.pedersenHash` (bit-for-bit identical to the circuit's `std::hash::pedersen_hash`), solves the
+witness, and generates a **real UltraHonk proof** (~14.5 KB). It is verified client-side before the
+content unlocks. The amount never leaves the device.
+
+### 3. On-chain verification (`contracts/`)
+
+- **Groth16/BN254** (`contracts/verifier/`): a Soroban contract running the Groth16 pairing check via
+  the **native BN254 host functions** (`g1_mul`, `g1_add`, `pairing_check`, Protocol 25). Deployed to
+  testnet and proven against a real BN254 proof vector (`src/test.rs`).
+- **UltraHonk** (`contracts/ULTRAHONK_ONCHAIN.md`): the Noir-native path — the browser/CLI UltraHonk
+  proof is verified directly on-chain. Demonstrated on localnet (see the budget note above).
 
 ---
 
-## Build (3-day plan)
+## Privacy & security model
 
-### Day 1 — circuit + verifier + tests
-- Write Noir circuit
-- Port Soroban verifier from stellar/soroban-examples/groth16_verifier
-- Add unit tests for circuit + verifier
+- **Amount hidden:** only the range bit is public; the value stays private (8-bit MVP range).
+- **No double-spend:** the publisher-bound `nullifier_hash` is revealed and recorded; a second spend
+  of the same note reproduces it and is rejected.
+- **No cross-publisher replay:** the nullifier folds in the publisher pubkey.
+- **Unlinkable:** the commitment is one-time and not tied to a wallet identity.
 
-### Day 2 — frontend + Hermes plugin
-- Next.js UI with Freighter integration
-- @aztec/bb.js proof generation in browser
-- Hermes SKILL.md + MCP server (`hermes skills install perkos/veilgate`)
-
-### Day 3 — deploy + demo
-- Deploy verifier to Stellar testnet
-- End-to-end demo: read article → pay → proof verified → content unlocked
-- Demo video + submit to DoraHacks
-
----
-
-## Tech stack (every line verified)
-
-- Noir 1.0 — github.com/noir-lang/noir
-- Groth16 backend — github.com/jamesbachini/Noir-Groth16
-- Soroban verifier — github.com/stellar/soroban-examples/groth16_verifier
-- BN254 host fns — github.com/orgs/stellar/discussions/1826 (CAP-0074, Protocol 25)
-- Freighter — @stellar/freighter-api npm
-- Barretenberg — @aztec/bb.js npm
-- Hermes Skill — hermes-agent.nousresearch.com/docs/user-guide/features/skills
+> Not audited. Research/hackathon code — do not use with real funds.
 
 ---
 
@@ -269,30 +137,59 @@ sequenceDiagram
 
 ```
 VeilGate/
-├── circuits/
-│   ├── zk_paywall.nr         # Noir circuit
-│   ├── Nargo.toml
-│   └── tests/
+├── circuits/                 # Noir ZK circuit (+ inline tests, Prover.toml, artifacts)
+│   ├── src/main.nr
+│   └── artifacts/            # vk / proof / public_inputs
 ├── contracts/
-│   └── verifier/             # Soroban verifier (Rust)
-│       ├── Cargo.toml
-│       ├── src/lib.rs
-│       └── src/test.rs
-├── frontend/                 # Next.js paywall UI
-│   ├── pages/
-│   ├── components/
-│   └── lib/
-├── plugins/
-│   └── veilgate/             # Hermes skill
-│       ├── SKILL.md
-│       └── veilgate_mcp_server.py
+│   ├── verifier/             # Soroban Groth16/BN254 verifier (Rust) + real-vector test
+│   └── ULTRAHONK_ONCHAIN.md  # Noir-native on-chain verification recipe + findings
+├── app/                      # Next.js 14 paywall UI (real in-browser proving)
+│   └── lib/proof.ts          # UltraHonk proof generation + client-side verify
 ├── scripts/
-│   ├── run_circuit.sh        # Noir → Groth16 pipeline
-│   └── verify_stellar.sh     # End-to-end verifier
-├── .github/workflows/test.yml
-├── Cargo.toml                # Workspace root
-└── README.md
+│   ├── prove_ultrahonk.mjs       # generate + verify a proof from the circuit
+│   └── build_proof_artifacts.sh  # regenerate vk/proof/public_inputs
+├── packages/verifier-bindings/   # TypeScript bindings for the verifier
+└── agent/                    # Agent plugin + MCP tools (pay via chat)
 ```
+
+---
+
+## Build & run
+
+### Circuit
+```bash
+cd circuits
+nargo test        # 5 tests, all execute main()
+nargo compile     # -> target/zk_paywall.json
+```
+
+### Groth16 verifier (testnet path)
+```bash
+cd contracts
+cargo test            # verifies a real BN254 proof vector
+stellar contract build
+```
+
+### App
+```bash
+cd app
+npm install
+npm run dev           # generates a real proof in the browser
+```
+
+### Generate a proof from the circuit
+```bash
+cd scripts && npm install && node prove_ultrahonk.mjs
+```
+
+---
+
+## Toolchain
+
+- **Noir** (`nargo` 1.0.0-beta.9) — ZK circuit DSL
+- **Barretenberg** (`bb` v0.87.0 / `bb.js` 0.87.2) — UltraHonk proving
+- **Soroban SDK** (Rust) — on-chain verifier; native BN254 host functions (Protocol 25)
+- **Next.js 14**, **Freighter**, **Stellar SDK** — reader app + wallet
 
 ---
 
