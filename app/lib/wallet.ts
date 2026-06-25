@@ -1,40 +1,60 @@
 /**
- * VeilGate — Stellar wallet helpers (Freighter wrapper)
+ * VeilGate — Stellar wallet helpers (Freighter wrapper, freighter-api v4).
  *
- * Reference: https://github.com/StellarCN/freighter-api
+ * v4 notes:
+ *  - isConnected() resolves to { isConnected: boolean } (an object).
+ *  - requestAccess() is what prompts the user and returns their address;
+ *    getAddress() only returns an address once the app is already allowed.
  */
 
 import {
   isConnected,
-  getAddress,
+  requestAccess,
   signTransaction,
 } from '@stellar/freighter-api';
 import type { WalletAddress } from './types';
 
+/** Extract a readable message from a FreighterApiError (object) or string. */
+function errMsg(error: unknown, fallback: string): string {
+  if (!error) return fallback;
+  if (typeof error === 'string') return error;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return String((error as { message: unknown }).message) || fallback;
+  }
+  return fallback;
+}
+
 export async function connectWallet(): Promise<WalletAddress> {
-  const connected = await isConnected();
-  if (!connected) {
+  const conn = await isConnected();
+  if (conn.error) {
+    throw new Error(errMsg(conn.error, 'Could not reach Freighter'));
+  }
+  if (!conn.isConnected) {
     throw new Error('Freighter not installed. Install from https://freighter.app');
   }
-  const result = await getAddress();
-  if (result.error) {
-    throw new Error(`Freighter error: ${result.error}`);
+
+  // Opens the Freighter approval popup and returns the public address.
+  const access = await requestAccess();
+  if (access.error) {
+    throw new Error(errMsg(access.error, 'Connection cancelled in Freighter'));
   }
-  if (!result.address) {
+  if (!access.address) {
     throw new Error('No address returned from Freighter');
   }
+
   return {
-    address: result.address,
-    network: 'TESTNET', // Hardcoded for Stellar Hacks demo
+    address: access.address,
+    network: 'TESTNET', // Stellar Hacks demo runs on testnet
   };
 }
 
-export async function signSorobanTx(xdr: string, networkPassphrase: string): Promise<string> {
-  const signed = await signTransaction(xdr, {
-    networkPassphrase,
-  });
+export async function signSorobanTx(
+  xdr: string,
+  networkPassphrase: string
+): Promise<string> {
+  const signed = await signTransaction(xdr, { networkPassphrase });
   if (signed.error) {
-    throw new Error(`Freighter sign error: ${signed.error}`);
+    throw new Error(errMsg(signed.error, 'Freighter could not sign the transaction'));
   }
   if (!signed.signedTxXdr) {
     throw new Error('No signed transaction returned');
