@@ -48,7 +48,7 @@ interface Msg {
   text: string;
 }
 
-const COMMANDS = ['/pay', '/wallet', '/history', '/shield', '/verify'];
+const COMMANDS = ['/settle', '/pay', '/wallet', '/history', '/shield', '/verify'];
 
 export function HermesDrawer() {
   const { isOpen, close } = useHermes();
@@ -58,7 +58,7 @@ export function HermesDrawer() {
     {
       from: 'hermes',
       text:
-        'Hey — I can run any VeilGate operation for you. Try /pay <url>, /wallet, /history, /shield, or /verify. I trigger the same operations as the main UI; I never see your keys or amounts.',
+        'Hey — I’m Hermes, your VeilGate agent. /settle pays a publisher privately through the shielded pool (real XLM on testnet); /pay unlocks an article; /wallet, /history, /shield and /verify do the rest. I trigger the same on-chain operations as the UI — I never touch your keys or your note secret.',
     },
   ]);
   const [input, setInput] = useState('');
@@ -81,6 +81,15 @@ export function HermesDrawer() {
     const [cmd, ...rest] = text.split(/\s+/);
     const arg = rest.join(' ');
     switch (cmd) {
+      case '/settle':
+        reply(
+          'Opening the shielded-pool payment. Pick a denomination (0.1 / 1 / 10 XLM) — I’ll deposit it, prove your note is in the pool, and pay the publisher. The deposit and the payment stay unlinkable on-chain.'
+        );
+        setTimeout(() => {
+          close();
+          router.push('/dashboard/settle');
+        }, 700);
+        break;
       case '/wallet':
         reply(
           address
@@ -93,12 +102,12 @@ export function HermesDrawer() {
         const h = address ? loadHistory(address) : [];
         reply(
           h.length
-            ? `Last ${Math.min(h.length, 5)} payments (amounts never stored):\n` +
+            ? `Last ${Math.min(h.length, 5)} payments (the link to your deposit stays private):\n` +
                 h
                   .slice(0, 5)
-                  .map((r) => `• ${domainOf(r.contentUrl)} · ${r.nullifier.slice(0, 12)}… · amount: private`)
+                  .map((r) => `• ${domainOf(r.contentUrl)} · ${r.nullifier.slice(0, 12)}… · deposit↔payment: private`)
                   .join('\n')
-            : 'No payments yet. Use /pay <url> to make your first private payment.'
+            : 'No payments yet. Use /settle to make your first private payment.'
         );
         break;
       }
@@ -123,7 +132,7 @@ export function HermesDrawer() {
       case '/verify':
         reply(
           arg
-            ? `A nullifier proves a payment happened without revealing the amount. ${arg.slice(0, 14)}… is a valid format; full on-chain verification runs in the verifier contract.`
+            ? `A nullifier proves a pool deposit was spent exactly once, without revealing which deposit it was. ${arg.slice(0, 14)}… looks well-formed; the pool contract records it on withdraw to block double-spends.`
             : 'Usage: /verify <nullifier> — paste a nullifier from your history.'
         );
         break;
