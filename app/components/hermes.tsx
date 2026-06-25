@@ -58,7 +58,7 @@ export function HermesDrawer() {
     {
       from: 'hermes',
       text:
-        'Hey — I’m Hermes, your VeilGate agent. /settle pays a publisher privately through the shielded pool (real XLM on testnet); /pay unlocks an article; /wallet, /history, /shield and /verify do the rest. I trigger the same on-chain operations as the UI — I never touch your keys or your note secret.',
+        'Hey — I’m Hermes, your VeilGate agent. /settle sends XLM through the shielded pool (real Stellar Testnet) — your deposit and the payment to the publisher are unlinkable on-chain. /pay unlocks an article; /wallet, /history, /shield and /verify do the rest. I trigger the same on-chain operations as the UI — I never touch your keys or your note secret.',
     },
   ]);
   const [input, setInput] = useState('');
@@ -105,7 +105,7 @@ export function HermesDrawer() {
             ? `Last ${Math.min(h.length, 5)} payments (the link to your deposit stays private):\n` +
                 h
                   .slice(0, 5)
-                  .map((r) => `• ${domainOf(r.contentUrl)} · ${r.nullifier.slice(0, 12)}… · deposit↔payment: private`)
+                  .map((r) => `• ${domainOf(r.contentUrl)} · ${r.nullifier.slice(0, 12)}… · deposit↔payment: unlinkable`)
                   .join('\n')
             : 'No payments yet. Use /settle to make your first private payment.'
         );

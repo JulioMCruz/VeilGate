@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation';
+import { DashboardHome } from '@/components/dashboard-home';
 
 export default function DashboardIndex() {
-  redirect('/dashboard/pay');
+  return <DashboardHome />;
 }
