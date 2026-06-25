@@ -156,6 +156,9 @@ cd contracts && cargo test -p pool          # 7 tests
 
 # Tree reconstruction: rebuild the tree for several leaf indices and prove each verifies.
 cd pool && npm install && npm test          # pathFor(1,0) / (2,1) / (5,3) -> proofs verify
+
+# App: API endpoints (challenge + x402 content), the Hermes agent, and lib helpers.
+cd app && npm install && npm test           # 19 tests (vitest)
 ```
 
 ---
