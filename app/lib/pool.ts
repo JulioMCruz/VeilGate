@@ -25,7 +25,7 @@ import { signTransaction } from '@stellar/freighter-api';
 
 export const POOL_ID =
   process.env.NEXT_PUBLIC_POOL_CONTRACT_ID ||
-  'CBFFBAZFR4ZN5F6CZPLK2QKNAGI674FQSMLOO2UEBO7M5WAE6PCHA2EW';
+  'CDZGIFZFRFKYIMSPBLA2OSFVD5RIUVVVWRVN5LPAHYHDGH6LOEGKGD7H';
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const LEVELS = 20;
 const R = BigInt(
@@ -99,27 +99,39 @@ function pathFor(leaves: bigint[], index: number): {
 
 /**
  * Read every commitment deposited, in leaf-index order, from chain events.
- * Single page (≤200) — enough for the demo; production would paginate.
+ * Paginates by advancing the start ledger and de-duplicating by event id, so it
+ * handles pools with more deposits than one RPC page returns.
  */
 async function fetchCommitments(server: rpc.Server): Promise<bigint[]> {
   const latest = await server.getLatestLedger();
-  const start = Math.max(1, latest.sequence - 16000);
-  const res = await server.getEvents({
-    startLedger: start,
-    filters: [{ type: 'contract', contractIds: [POOL_ID] }],
-    limit: 200,
-  });
+  let start = Math.max(1, latest.sequence - 16000);
   const byIndex = new Map<number, bigint>();
-  for (const ev of res.events ?? []) {
-    try {
-      const topics = (ev.topic ?? []).map((t) => scValToNative(t));
-      if (topics[0] !== 'deposit') continue;
-      const data = scValToNative(ev.value) as [Uint8Array, number];
-      const commitment = BigInt('0x' + Buffer.from(data[0]).toString('hex'));
-      byIndex.set(Number(data[1]), commitment);
-    } catch {
-      /* skip non-deposit events */
+  const seen = new Set<string>();
+  for (let page = 0; page < 50; page++) {
+    const res = await server.getEvents({
+      startLedger: start,
+      filters: [{ type: 'contract', contractIds: [POOL_ID] }],
+      limit: 200,
+    });
+    const evs = res.events ?? [];
+    let fresh = 0;
+    for (const ev of evs) {
+      const id = (ev as { id: string }).id;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      fresh += 1;
+      try {
+        const topics = (ev.topic ?? []).map((t) => scValToNative(t));
+        if (topics[0] !== 'deposit') continue;
+        const data = scValToNative(ev.value) as [Uint8Array, number];
+        byIndex.set(Number(data[1]), BigInt('0x' + Buffer.from(data[0]).toString('hex')));
+      } catch {
+        /* skip non-deposit events */
+      }
     }
+    // Last page (short) or nothing new (single over-full ledger): stop.
+    if (evs.length < 200 || fresh === 0) break;
+    start = (evs[evs.length - 1] as { ledger: number }).ledger;
   }
   const max = byIndex.size ? Math.max(...byIndex.keys()) : -1;
   const leaves: bigint[] = [];
@@ -162,9 +174,18 @@ export interface PayResult {
   nullifierHash: string;
 }
 
-/** Demo recipient field bound in the proof (binding to the Address is a follow-up). */
-export function recipientFieldFor(_publisher: string): bigint {
-  return 0x5075626c6973686572n % R;
+/**
+ * Field element the proof is bound to = sha256(recipient strkey) with the top
+ * byte zeroed (248-bit, always < r). The contract derives the identical value
+ * from the `recipient` Address, so a proof only ever pays the intended account.
+ */
+export async function recipientFieldFor(publisher: string): Promise<bigint> {
+  const data = new TextEncoder().encode(publisher);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', data));
+  digest[0] = 0;
+  let n = 0n;
+  for (const b of digest) n = (n << 8n) | BigInt(b);
+  return n;
 }
 
 /**
@@ -179,7 +200,7 @@ export async function payPrivately(
 ): Promise<PayResult> {
   const server = new rpc.Server(RPC_URL);
   const note = newNote();
-  const recipientField = recipientFieldFor(publisher);
+  const recipientField = await recipientFieldFor(publisher);
   const nullifierHash = poseidon1([note.nullifier]);
 
   // 1. deposit (commitment) — contract recomputes the root on-chain
@@ -213,7 +234,9 @@ export async function payPrivately(
     '/pool/withdraw_final.zkey'
   );
 
-  // 4. withdraw — verifies on-chain against the recent root, pays the publisher
+  // 4. withdraw — verifies on-chain against the recent root, pays the publisher.
+  //    The contract re-derives the recipient field from `recipient`, so the proof
+  //    is bound to this exact account (a swapped recipient fails verification).
   onStage?.('paying');
   const withdrawHash = await invoke(server, from, 'withdraw', [
     xdr.ScVal.scvBytes(bufFromHex(g1(proof.pi_a))),
@@ -221,7 +244,6 @@ export async function payPrivately(
     xdr.ScVal.scvBytes(bufFromHex(g1(proof.pi_c))),
     xdr.ScVal.scvBytes(bufFromHex(be32hex(root))),
     xdr.ScVal.scvBytes(bufFromHex(be32hex(nullifierHash))),
-    xdr.ScVal.scvBytes(bufFromHex(be32hex(recipientField))),
     new Address(publisher).toScVal(),
   ]);
 
