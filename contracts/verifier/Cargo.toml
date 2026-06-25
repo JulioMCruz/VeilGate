@@ -1,0 +1,16 @@
+[package]
+name = "verifier"
+version = "0.0.1"
+edition = "2021"
+description = "VeilGate Soroban verifier for Groth16 ZK proofs (Protocol 25 BN254 host functions)"
+license = "MIT"
+publish = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[features]
+testutils = ["soroban-sdk/testutils"]

@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = ["verifier"]
+exclude = []
+
+[workspace.package]
+edition = "2021"
+version = "0.0.1"
+authors = ["PerkOS Team"]
+license = "MIT"
+
+[workspace.dependencies]
+soroban-sdk = "22"
+stellar-env = { git = "https://github.com/stellar/rs-soroban-sdk" }
+
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = false
+strip = true
+lto = true
+
+[profile.release-with-logs]
+inherits = "release"
+debug-assertions = true
