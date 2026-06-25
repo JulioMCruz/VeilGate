@@ -68,4 +68,16 @@ bit-for-bit compatible with the circuit's Poseidon (validated). So:
 
 The earlier admin-anchored variant is removed.
 
-Trustless pool: `CDZGIFZFRFKYIMSPBLA2OSFVD5RIUVVVWRVN5LPAHYHDGH6LOEGKGD7H`
+## Denominations
+
+Each denomination is a **separate instance of this same contract** (identical code + VK,
+different fixed `denom`). Mixing only happens within a denomination, which is what keeps each
+anonymity set meaningful. Deployed on testnet:
+
+| Amount | Stroops | Pool |
+|---|---|---|
+| 0.1 XLM | `1_000_000` | `CDZGIFZFRFKYIMSPBLA2OSFVD5RIUVVVWRVN5LPAHYHDGH6LOEGKGD7H` |
+| 1 XLM | `10_000_000` | `CBIIKKJHZKA77YWXIITCUX6HFVEWIZAJYKO2Q6ZL3SJ3ZTFUY4RESJ2Z` |
+| 10 XLM | `100_000_000` | `CB27XGZ53S3WGDJE3MN3EHKPBXAMELAK7NY5ZD42ES7ZSLMF7AHTC57E` |
+
+(1 XLM pool exercised end-to-end: deposit → on-chain root == prover's root → withdraw paid 1 XLM.)

@@ -22,10 +22,11 @@ import {
   scValToNative,
 } from '@stellar/stellar-sdk';
 import { signTransaction } from '@stellar/freighter-api';
+import { type Denomination, DEFAULT_DENOMINATION } from './pool-config';
 
+/** Default pool (the 0.1 XLM denomination), kept for convenience. */
 export const POOL_ID =
-  process.env.NEXT_PUBLIC_POOL_CONTRACT_ID ||
-  'CDZGIFZFRFKYIMSPBLA2OSFVD5RIUVVVWRVN5LPAHYHDGH6LOEGKGD7H';
+  process.env.NEXT_PUBLIC_POOL_CONTRACT_ID || DEFAULT_DENOMINATION.poolId;
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const LEVELS = 20;
 const R = BigInt(
@@ -102,7 +103,7 @@ function pathFor(leaves: bigint[], index: number): {
  * Paginates by advancing the start ledger and de-duplicating by event id, so it
  * handles pools with more deposits than one RPC page returns.
  */
-async function fetchCommitments(server: rpc.Server): Promise<bigint[]> {
+async function fetchCommitments(server: rpc.Server, poolId: string): Promise<bigint[]> {
   const latest = await server.getLatestLedger();
   let start = Math.max(1, latest.sequence - 16000);
   const byIndex = new Map<number, bigint>();
@@ -110,7 +111,7 @@ async function fetchCommitments(server: rpc.Server): Promise<bigint[]> {
   for (let page = 0; page < 50; page++) {
     const res = await server.getEvents({
       startLedger: start,
-      filters: [{ type: 'contract', contractIds: [POOL_ID] }],
+      filters: [{ type: 'contract', contractIds: [poolId] }],
       limit: 200,
     });
     const evs = res.events ?? [];
@@ -154,9 +155,15 @@ async function signAndSend(server: rpc.Server, tx: string): Promise<string> {
   throw new Error('transaction timed out');
 }
 
-async function invoke(server: rpc.Server, caller: string, fn: string, args: xdr.ScVal[]): Promise<string> {
+async function invoke(
+  server: rpc.Server,
+  caller: string,
+  poolId: string,
+  fn: string,
+  args: xdr.ScVal[]
+): Promise<string> {
   const account = await server.getAccount(caller);
-  const op = Operation.invokeContractFunction({ contract: POOL_ID, function: fn, args });
+  const op = Operation.invokeContractFunction({ contract: poolId, function: fn, args });
   const built = new TransactionBuilder(account, {
     fee: (Number(BASE_FEE) * 1000).toString(),
     networkPassphrase: Networks.TESTNET,
@@ -196,9 +203,11 @@ export async function recipientFieldFor(publisher: string): Promise<bigint> {
 export async function payPrivately(
   from: string,
   publisher: string,
+  denom: Denomination,
   onStage?: (s: 'depositing' | 'proving' | 'paying') => void
 ): Promise<PayResult> {
   const server = new rpc.Server(RPC_URL);
+  const poolId = denom.poolId;
   const note = newNote();
   const recipientField = await recipientFieldFor(publisher);
   const nullifierHash = poseidon1([note.nullifier]);
@@ -206,14 +215,14 @@ export async function payPrivately(
   // 1. deposit (commitment) — contract recomputes the root on-chain
   onStage?.('depositing');
   const commitmentHex = be32hex(note.commitment);
-  const depositHash = await invoke(server, from, 'deposit', [
+  const depositHash = await invoke(server, from, poolId, 'deposit', [
     new Address(from).toScVal(),
     xdr.ScVal.scvBytes(bufFromHex(commitmentHex)),
   ]);
 
   // 2. rebuild the tree from chain events -> this note's path
   onStage?.('proving');
-  const leaves = await fetchCommitments(server);
+  const leaves = await fetchCommitments(server, poolId);
   const index = leaves.findIndex((c) => c === note.commitment);
   if (index < 0) throw new Error('deposit not yet indexed; retry');
   const { root, pathElements, pathIndices } = pathFor(leaves, index);
@@ -238,7 +247,7 @@ export async function payPrivately(
   //    The contract re-derives the recipient field from `recipient`, so the proof
   //    is bound to this exact account (a swapped recipient fails verification).
   onStage?.('paying');
-  const withdrawHash = await invoke(server, from, 'withdraw', [
+  const withdrawHash = await invoke(server, from, poolId, 'withdraw', [
     xdr.ScVal.scvBytes(bufFromHex(g1(proof.pi_a))),
     xdr.ScVal.scvBytes(bufFromHex(g2(proof.pi_b))),
     xdr.ScVal.scvBytes(bufFromHex(g1(proof.pi_c))),

@@ -2,30 +2,37 @@
 
 import { useState } from 'react';
 import { useWallet } from '@/lib/providers/wallet-provider';
-import { payPrivately, POOL_ID } from '@/lib/pool';
+import { payPrivately } from '@/lib/pool';
+import { DENOMINATIONS, DEFAULT_DENOMINATION, type Denomination } from '@/lib/pool-config';
 import { Card, CopyButton, PrivacyBadge, truncate } from '@/components/ui';
 
 type Stage = 'idle' | 'depositing' | 'proving' | 'paying' | 'done' | 'error';
 
-const STAGE_LABEL: Record<Stage, string> = {
-  idle: '',
-  depositing: 'Depositing 0.1 XLM into the pool…',
-  proving: 'Rebuilding the tree & proving in your browser…',
-  paying: 'Verifying on-chain & paying the publisher…',
-  done: '',
-  error: '',
-};
+function stageLabel(stage: Stage, denom: Denomination): string {
+  switch (stage) {
+    case 'depositing':
+      return `Depositing ${denom.label} into the pool…`;
+    case 'proving':
+      return 'Rebuilding the tree & proving in your browser…';
+    case 'paying':
+      return 'Verifying on-chain & paying the publisher…';
+    default:
+      return '';
+  }
+}
 
 interface Receipt {
   depositHash: string;
   withdrawHash: string;
   nullifier: string;
   publisher: string;
+  amount: string;
 }
 
 export function SettleFlow() {
   const { address } = useWallet();
   const [publisher, setPublisher] = useState('');
+  const [denom, setDenom] = useState<Denomination>(DEFAULT_DENOMINATION);
   const [stage, setStage] = useState<Stage>('idle');
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,12 +49,13 @@ export function SettleFlow() {
     setError(null);
     setReceipt(null);
     try {
-      const res = await payPrivately(address, publisher, (s) => setStage(s));
+      const res = await payPrivately(address, publisher, denom, (s) => setStage(s));
       setReceipt({
         depositHash: res.depositHash,
         withdrawHash: res.withdrawHash,
         nullifier: res.nullifierHash,
         publisher,
+        amount: denom.label,
       });
       setStage('done');
     } catch (e) {
@@ -64,13 +72,13 @@ export function SettleFlow() {
         </div>
         <h2 className="text-xl font-bold">Publisher paid — on testnet</h2>
         <p className="mt-2 text-sm text-gray-400">
-          0.1 XLM moved to the publisher through the shielded pool. The proof was verified
+          {receipt.amount} moved to the publisher through the shielded pool. The proof was verified
           on-chain; your deposit and the payment are unlinkable.
         </p>
         <Card className="mt-6 text-left">
           <dl className="mono space-y-2 text-xs">
             <Row k="Publisher" v={truncate(receipt.publisher, 6, 6)} />
-            <Row k="Amount" v="0.1 XLM" />
+            <Row k="Amount" v={receipt.amount} />
             <ReceiptLink k="Deposit tx" hash={receipt.depositHash} />
             <ReceiptLink k="Withdraw tx" hash={receipt.withdrawHash} />
             <div className="flex items-center justify-between">
@@ -108,11 +116,11 @@ export function SettleFlow() {
           <div className="proof-glow absolute inset-0 animate-proof-pulse rounded-full" />
         </div>
         <h2 className="text-lg font-bold" tabIndex={-1}>
-          {STAGE_LABEL[stage]}
+          {stageLabel(stage, denom)}
         </h2>
         <ol className="mx-auto mt-6 max-w-xs space-y-2 text-left text-sm">
           <Step done={['proving', 'paying'].includes(stage)} active={stage === 'depositing'}>
-            Deposit 0.1 XLM (you sign)
+            Deposit {denom.label} (you sign)
           </Step>
           <Step done={['paying'].includes(stage)} active={stage === 'proving'}>
             Rebuild tree &amp; prove (browser)
@@ -132,7 +140,7 @@ export function SettleFlow() {
     <div className="mx-auto max-w-xl">
       <h1 className="text-2xl font-bold">Pay a publisher — real settlement</h1>
       <p className="mt-1 text-sm text-gray-400">
-        A real 0.1 XLM payment on Stellar testnet, routed through the shielded pool. Your
+        A real {denom.label} payment on Stellar testnet, routed through the shielded pool. Your
         deposit and the payment can&apos;t be linked on-chain.
       </p>
 
@@ -146,9 +154,30 @@ export function SettleFlow() {
           placeholder="G…"
           className="mono mt-2 w-full rounded-lg border border-veil-900/70 bg-gray-900 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-veil-500 focus:outline-none"
         />
+        <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-veil-400">
+          Denomination
+        </p>
+        <div className="mt-2 grid grid-cols-3 gap-2">
+          {DENOMINATIONS.map((d) => (
+            <button
+              key={d.poolId}
+              onClick={() => setDenom(d)}
+              className={`rounded-lg border px-3 py-2 text-sm transition ${
+                d.poolId === denom.poolId
+                  ? 'border-veil-500 bg-veil-600/20 text-white'
+                  : 'border-veil-900/70 text-gray-400 hover:bg-veil-900/40'
+              }`}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-[11px] text-gray-500">
+          Each denomination is its own pool — you blend in with deposits of the same size.
+        </p>
         <dl className="mt-4 space-y-1.5 text-sm">
-          <Row k="Amount" v="0.1 XLM (fixed denomination)" />
-          <Row k="Pool" v={truncate(POOL_ID, 6, 6)} />
+          <Row k="Amount" v={`${denom.label} (fixed denomination)`} />
+          <Row k="Pool" v={truncate(denom.poolId, 6, 6)} />
           <Row k="Network" v="Stellar Testnet" />
         </dl>
         <button
