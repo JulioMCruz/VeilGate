@@ -1,8 +1,9 @@
 /**
  * Payment receipts — stored locally, keyed by wallet address.
  *
- * By design, the receipt has NO `amount` field. Even the user's own history
- * cannot reveal how much was paid. Do not add an amount property here.
+ * Privacy invariant: NO hidden/secret amount field. The only amount stored is the
+ * `denomination` LABEL ("1 XLM"), which is already public on-chain (anyone can see
+ * which pool contract was called). Never store the note secret here.
  */
 
 export interface PaymentReceipt {
@@ -12,6 +13,13 @@ export interface PaymentReceipt {
   publisherDomain: string;
   timestamp: string; // ISO 8601
   proofBytes: number;
+  // On-chain settlement facts (present for shielded-pool payments).
+  depositHash?: string;
+  withdrawHash?: string;
+  poolId?: string;
+  root?: string; // the recent root the proof verified against
+  denomination?: string; // public label, e.g. "1 XLM"
+  anonymitySet?: number; // deposits in the pool at settle time
 }
 
 const KEY = (address: string) => `veilgate.history.${address}`;

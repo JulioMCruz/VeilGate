@@ -179,6 +179,21 @@ export interface PayResult {
   depositHash: string;
   withdrawHash: string;
   nullifierHash: string;
+  /** The recent root the contract verified the proof against. */
+  root: string;
+  /** Pool the payment settled through. */
+  poolId: string;
+  /** Groth16/BN254 proof size on the wire (A 64 + B 128 + C 64). */
+  proofBytes: number;
+  /** Deposits in the pool when this note settled — the anonymity set it blends into. */
+  anonymitySet: number;
+}
+
+/** How many deposits are currently in a pool — the anonymity set you blend into. */
+export async function countDeposits(poolId: string): Promise<number> {
+  const server = new rpc.Server(RPC_URL);
+  const leaves = await fetchCommitments(server, poolId);
+  return leaves.length;
 }
 
 /**
@@ -226,6 +241,7 @@ export async function payPrivately(
   const index = leaves.findIndex((c) => c === note.commitment);
   if (index < 0) throw new Error('deposit not yet indexed; retry');
   const { root, pathElements, pathIndices } = pathFor(leaves, index);
+  const anonymitySet = leaves.length;
 
   // 3. Groth16 proof (browser) — secret stays local
   const snarkjs = await import('snarkjs');
@@ -256,5 +272,13 @@ export async function payPrivately(
     new Address(publisher).toScVal(),
   ]);
 
-  return { depositHash, withdrawHash, nullifierHash: be32hex(nullifierHash) };
+  return {
+    depositHash,
+    withdrawHash,
+    nullifierHash: be32hex(nullifierHash),
+    root: be32hex(root),
+    poolId,
+    proofBytes: 256,
+    anonymitySet,
+  };
 }
