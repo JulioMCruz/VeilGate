@@ -7,11 +7,12 @@ import { useHermes } from '@/components/hermes';
 import { TestnetPill, CopyButton, truncate } from '@/components/ui';
 
 const NAV = [
-  { href: '/dashboard/pay', label: 'Pay', icon: '◈' },
-  { href: '/dashboard/settle', label: 'Settle', icon: '⇄' },
-  { href: '/dashboard/history', label: 'History', icon: '⊞' },
-  { href: '/dashboard/shield', label: 'Shield', icon: '🛡' },
+  { href: '/dashboard', label: 'Home', icon: '⌂' },
+  { href: '/dashboard/settle', label: 'Pay', icon: '⇄' },
+  { href: '/dashboard/history', label: 'Activity', icon: '⊞' },
   { href: '/dashboard/wallet', label: 'Wallet', icon: '⬡' },
+  { href: '/dashboard/pay', label: 'Unlock', icon: '◈' },
+  { href: '/dashboard/shield', label: 'Shield', icon: '🛡' },
 ];
 
 export function TopBar() {
@@ -25,7 +26,7 @@ export function TopBar() {
   }
   return (
     <header className="flex items-center justify-between border-b border-veil-900/70 px-4 py-3 sm:px-6">
-      <Link href="/dashboard/pay" className="glow font-bold text-veil-400">
+      <Link href="/dashboard" className="glow font-bold text-veil-400">
         VeilGate
       </Link>
       <div className="flex items-center gap-3">

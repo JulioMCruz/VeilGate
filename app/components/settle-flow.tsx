@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useWallet } from '@/lib/providers/wallet-provider';
-import { payPrivately } from '@/lib/pool';
+import { payPrivately, countDeposits } from '@/lib/pool';
+import { addReceipt } from '@/lib/history';
 import { DENOMINATIONS, DEFAULT_DENOMINATION, type Denomination } from '@/lib/pool-config';
-import { Card, CopyButton, PrivacyBadge, truncate } from '@/components/ui';
+import { Card, CopyButton, PrivacyBadge, ExplorerLink, truncate } from '@/components/ui';
 
 type Stage = 'idle' | 'depositing' | 'proving' | 'paying' | 'done' | 'error';
 
@@ -13,7 +14,7 @@ function stageLabel(stage: Stage, denom: Denomination): string {
     case 'depositing':
       return `Depositing ${denom.label} into the pool…`;
     case 'proving':
-      return 'Rebuilding the tree & proving in your browser…';
+      return 'Generating your Groth16 privacy proof locally…';
     case 'paying':
       return 'Verifying on-chain & paying the publisher…';
     default:
@@ -21,12 +22,25 @@ function stageLabel(stage: Stage, denom: Denomination): string {
   }
 }
 
+const PROGRESS: Record<Stage, number> = {
+  idle: 0,
+  depositing: 25,
+  proving: 60,
+  paying: 90,
+  done: 100,
+  error: 0,
+};
+
 interface Receipt {
   depositHash: string;
   withdrawHash: string;
   nullifier: string;
   publisher: string;
   amount: string;
+  poolId: string;
+  root: string;
+  proofBytes: number;
+  anonymitySet: number;
 }
 
 export function SettleFlow() {
@@ -36,12 +50,26 @@ export function SettleFlow() {
   const [stage, setStage] = useState<Stage>('idle');
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [poolSize, setPoolSize] = useState<number | null>(null);
 
   const busy = !['idle', 'done', 'error'].includes(stage);
+  const publisherValid = /^G[A-Z2-7]{55}$/.test(publisher);
+
+  // Anonymity-set indicator: how many deposits are already in the chosen pool.
+  useEffect(() => {
+    let live = true;
+    setPoolSize(null);
+    countDeposits(denom.poolId)
+      .then((n) => live && setPoolSize(n))
+      .catch(() => live && setPoolSize(null));
+    return () => {
+      live = false;
+    };
+  }, [denom.poolId]);
 
   async function pay() {
     if (!address) return;
-    if (!/^G[A-Z2-7]{55}$/.test(publisher)) {
+    if (!publisherValid) {
       setError('Enter a valid Stellar account address (G…) for the publisher.');
       setStage('error');
       return;
@@ -56,7 +84,27 @@ export function SettleFlow() {
         nullifier: res.nullifierHash,
         publisher,
         amount: denom.label,
+        poolId: res.poolId,
+        root: res.root,
+        proofBytes: res.proofBytes,
+        anonymitySet: res.anonymitySet,
       });
+      // Persist an on-chain receipt so it shows up in the transaction log.
+      addReceipt(address, {
+        nullifier: res.nullifierHash,
+        commitment: '',
+        contentUrl: '',
+        publisherDomain: truncate(publisher, 6, 6),
+        timestamp: new Date().toISOString(),
+        proofBytes: res.proofBytes,
+        depositHash: res.depositHash,
+        withdrawHash: res.withdrawHash,
+        poolId: res.poolId,
+        root: res.root,
+        denomination: denom.label,
+        anonymitySet: res.anonymitySet,
+      });
+      window.dispatchEvent(new Event('veilgate:history'));
       setStage('done');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Settlement failed');
@@ -70,17 +118,30 @@ export function SettleFlow() {
         <div className="mx-auto mb-4 flex h-16 w-16 animate-ring-expand items-center justify-center rounded-full bg-green-600 text-2xl text-white">
           ✓
         </div>
-        <h2 className="text-xl font-bold">Publisher paid — on testnet</h2>
+        <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-veil-500/50 bg-veil-900/40 px-3 py-1 text-xs text-veil-300">
+          <span>◈</span> Groth16 proof verified on-chain
+        </div>
+        <h2 className="text-xl font-bold">Payment confirmed on Stellar Testnet</h2>
         <p className="mt-2 text-sm text-gray-400">
-          {receipt.amount} moved to the publisher through the shielded pool. The proof was verified
-          on-chain; your deposit and the payment are unlinkable.
+          {receipt.amount} sent through the shielded pool. The proof was verified by the contract
+          on-chain. Your deposit and this payment are unlinkable — no observer can connect them.
         </p>
         <Card className="mt-6 text-left">
           <dl className="mono space-y-2 text-xs">
             <Row k="Publisher" v={truncate(receipt.publisher, 6, 6)} />
-            <Row k="Amount" v={receipt.amount} />
-            <ReceiptLink k="Deposit tx" hash={receipt.depositHash} />
-            <ReceiptLink k="Withdraw tx" hash={receipt.withdrawHash} />
+            <Row k="Denomination" v={receipt.amount} />
+            <div className="flex items-center justify-between">
+              <dt className="text-gray-500">Deposit tx</dt>
+              <dd><ExplorerLink kind="tx" id={receipt.depositHash} /></dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-gray-500">Withdraw tx</dt>
+              <dd><ExplorerLink kind="tx" id={receipt.withdrawHash} /></dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-gray-500">Pool</dt>
+              <dd><ExplorerLink kind="contract" id={receipt.poolId}>{`${truncate(receipt.poolId, 6, 6)} ↗`}</ExplorerLink></dd>
+            </div>
             <div className="flex items-center justify-between">
               <dt className="text-gray-500">Nullifier</dt>
               <dd className="flex items-center gap-1 text-gray-200">
@@ -88,11 +149,12 @@ export function SettleFlow() {
                 <CopyButton value={receipt.nullifier} label="nullifier" />
               </dd>
             </div>
-            <div className="flex items-center justify-between">
-              <dt className="text-gray-500">Link to your deposit</dt>
-              <dd>
-                <PrivacyBadge>private</PrivacyBadge>
-              </dd>
+            <Row k="Root matched" v={truncate(receipt.root, 10, 6)} />
+            <Row k="Proof size" v={`${receipt.proofBytes} bytes`} />
+            <Row k="Anonymity set" v={`${receipt.anonymitySet} deposit${receipt.anonymitySet === 1 ? '' : 's'}`} />
+            <div className="flex items-center justify-between border-t border-veil-900/60 pt-2">
+              <dt className="text-gray-500">Deposit ↔ payment</dt>
+              <dd><PrivacyBadge>unlinkable</PrivacyBadge></dd>
             </div>
           </dl>
         </Card>
@@ -103,7 +165,7 @@ export function SettleFlow() {
           }}
           className="mt-5 rounded-xl border border-veil-900/70 px-6 py-3 text-sm text-gray-300 hover:bg-veil-900/40"
         >
-          Pay another
+          New private payment
         </button>
       </div>
     );
@@ -118,19 +180,25 @@ export function SettleFlow() {
         <h2 className="text-lg font-bold" tabIndex={-1}>
           {stageLabel(stage, denom)}
         </h2>
+        <div className="mx-auto mt-5 h-1 w-full max-w-xs rounded-full bg-veil-900/60">
+          <div
+            className="h-1 rounded-full bg-veil-500 transition-all duration-700"
+            style={{ width: `${PROGRESS[stage]}%` }}
+          />
+        </div>
         <ol className="mx-auto mt-6 max-w-xs space-y-2 text-left text-sm">
           <Step done={['proving', 'paying'].includes(stage)} active={stage === 'depositing'}>
             Deposit {denom.label} (you sign)
           </Step>
           <Step done={['paying'].includes(stage)} active={stage === 'proving'}>
-            Rebuild tree &amp; prove (browser)
+            Prove in your browser (Groth16)
           </Step>
           <Step done={false} active={stage === 'paying'}>
             Verify on-chain &amp; pay publisher
           </Step>
         </ol>
         <p className="mt-6 text-xs text-gray-500">
-          Real testnet transactions — this takes ~20–40 seconds.
+          Real Stellar Testnet — takes ~20–40&nbsp;s. Your note secret never leaves this tab.
         </p>
       </div>
     );
@@ -174,15 +242,29 @@ export function SettleFlow() {
         </div>
         <p className="mt-2 text-[11px] text-gray-500">
           Each denomination is its own pool — you blend in with deposits of the same size.
+          {poolSize !== null && (
+            <span className="text-veil-300">
+              {' '}
+              {poolSize} deposit{poolSize === 1 ? '' : 's'} in this pool — your payment blends in with all of them.
+            </span>
+          )}
         </p>
         <dl className="mt-4 space-y-1.5 text-sm">
           <Row k="Amount" v={`${denom.label} (fixed denomination)`} />
-          <Row k="Pool" v={truncate(denom.poolId, 6, 6)} />
+          <div className="flex items-center justify-between">
+            <dt className="text-gray-500">Pool contract</dt>
+            <dd className="mono flex items-center gap-1 text-gray-200">
+              {truncate(denom.poolId, 6, 6)}
+              <CopyButton value={denom.poolId} label="pool ID" />
+              <ExplorerLink kind="contract" id={denom.poolId}>↗</ExplorerLink>
+            </dd>
+          </div>
           <Row k="Network" v="Stellar Testnet" />
         </dl>
         <button
           onClick={pay}
-          className="mt-5 w-full rounded-xl bg-veil-600 px-6 py-3 font-medium text-white hover:bg-veil-500"
+          disabled={!publisherValid}
+          className="mt-5 w-full rounded-xl bg-veil-600 px-6 py-3 font-medium text-white hover:bg-veil-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Deposit &amp; pay privately
         </button>
@@ -201,24 +283,6 @@ function Row({ k, v }: { k: string; v: string }) {
     <div className="flex items-center justify-between">
       <dt className="text-gray-500">{k}</dt>
       <dd className="text-gray-200">{v}</dd>
-    </div>
-  );
-}
-
-function ReceiptLink({ k, hash }: { k: string; hash: string }) {
-  return (
-    <div className="flex items-center justify-between">
-      <dt className="text-gray-500">{k}</dt>
-      <dd>
-        <a
-          href={`https://stellar.expert/explorer/testnet/tx/${hash}`}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="text-veil-400 hover:underline"
-        >
-          {truncate(hash, 8, 6)} →
-        </a>
-      </dd>
     </div>
   );
 }
