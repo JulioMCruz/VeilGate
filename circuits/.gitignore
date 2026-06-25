@@ -1,0 +1,14 @@
+# Noir build artifacts
+target/
+*.json.bak
+
+# nargo install cache
+nargo_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
