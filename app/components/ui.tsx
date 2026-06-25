@@ -9,15 +9,37 @@ export function truncate(s: string, head = 6, tail = 4): string {
   return `${s.slice(0, head)}…${s.slice(-tail)}`;
 }
 
-/** Inline "[PRIVATE]" / "— private" label for amount fields. */
-export function PrivacyBadge({ children = '— private' }: { children?: ReactNode }) {
+/** Inline badge for the privacy property: the deposit and the payment are unlinkable. */
+export function PrivacyBadge({ children = 'unlinkable' }: { children?: ReactNode }) {
   return (
     <span
       className="inline-flex items-center gap-1 rounded-md bg-veil-100 px-2 py-0.5 text-xs font-medium text-veil-700 dark:bg-veil-900/60 dark:text-veil-300"
-      aria-label="Payment amount — private, not recorded"
+      aria-label="Deposit and payment are unlinkable on-chain"
     >
-      🔒 {children}
+      🔗 {children}
     </span>
+  );
+}
+
+/** Link to stellar.expert (testnet) for a transaction or a contract. */
+export function ExplorerLink({
+  kind,
+  id,
+  children,
+}: {
+  kind: 'tx' | 'contract';
+  id: string;
+  children?: ReactNode;
+}) {
+  return (
+    <a
+      href={`https://stellar.expert/explorer/testnet/${kind}/${id}`}
+      target="_blank"
+      rel="noreferrer noopener"
+      className="text-veil-400 hover:underline"
+    >
+      {children ?? `${truncate(id, 8, 6)} ↗`}
+    </a>
   );
 }
 
