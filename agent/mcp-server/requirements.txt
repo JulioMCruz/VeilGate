@@ -1,0 +1,6 @@
+# VeilGate MCP server dependencies
+# Install: pip install -r requirements.txt
+
+mcp>=1.0.0
+stellar-sdk>=10.0.0
+requests>=2.31.0
