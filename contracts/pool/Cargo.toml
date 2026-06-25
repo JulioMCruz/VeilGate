@@ -1,0 +1,19 @@
+[package]
+name = "pool"
+version = "0.0.1"
+edition = "2021"
+description = "VeilGate shielded pool — deposit a token, withdraw to a publisher with a Groth16 proof"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[features]
+testutils = ["soroban-sdk/testutils"]
