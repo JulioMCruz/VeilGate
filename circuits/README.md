@@ -4,71 +4,77 @@ The zero-knowledge circuit that proves a payment is valid without revealing the 
 
 ## What it proves
 
-Given private inputs `(secret, nullifier, amount)` and public inputs
-`(commitment, nullifier_hash, publisher_pubkey, merkle_root, amount_range_bit)`:
+Given private inputs `(secret, nullifier, amount, merkle_path, merkle_indices)` and public
+inputs `(commitment, nullifier_hash, publisher_pubkey_(x,y), merkle_root, amount_range_bit)`,
+the circuit enforces (every check is a real constraint — none are decorative):
 
 1. **Commitment is well-formed**: `commitment == Pedersen(secret, nullifier, amount)`
-2. **Nullifier is well-formed**: `nullifier_hash == Pedersen(nullifier)`
-3. **Publisher binding**: commitment is bound to a specific publisher pubkey
-4. **Amount fits in 8 bits**: `amount ∈ [0, 255]` (centi-cents, range proof)
-5. **Nullifier not spent**: Merkle proof against the published spent-set
+2. **Publisher-bound nullifier**: `nullifier_hash == Pedersen(nullifier, pub_x, pub_y)`.
+   Folding the publisher pubkey into the nullifier hash binds the spend to one publisher,
+   so a proof cannot be replayed to a different publisher, and the spent-set is scoped per
+   publisher.
+3. **Amount fits in 8 bits**: `amount ∈ [0, 255]` (centi-cents, range proof)
+4. **Commitment membership**: a Merkle proof that `commitment` is in the publisher's
+   published commitment set, enforced against the public `merkle_root`.
+
+Double-spend is prevented **outside** the circuit: the publisher-bound `nullifier_hash`
+is revealed and recorded in a spent-set by the gateway; a second spend of the same note
+reproduces the same `nullifier_hash` and is rejected.
 
 ## File layout
 
 ```
 circuits/
 ├── Nargo.toml          # Package manifest
-├── src/
-│   └── main.nr         # The circuit (fn main + helper functions)
-└── tests/
-    ├── Nargo.toml
-    └── main.nr         # Unit tests for helpers
+└── src/
+    └── main.nr         # The circuit (fn main) + helpers + inline #[test]s
 ```
 
 ## Public vs private inputs
 
 | Input | Type | Visibility | Purpose |
 |---|---|---|---|
-| `commitment` | `Field` | public | Pedersen(secret, nullifier, amount) |
-| `nullifier_hash` | `Field` | public | Pedersen(nullifier) — prevents double-spend |
-| `publisher_pubkey_x` | `Field` | public | Binds payment to one publisher |
-| `publisher_pubkey_y` | `Field` | public | (part of binding) |
-| `merkle_root` | `Field` | public | Root of nullifier spent-set |
-| `amount_range_bit` | `u8` | public | 0/1, says "amount is in range" |
+| `commitment` | `Field` | public | `Pedersen(secret, nullifier, amount)` |
+| `nullifier_hash` | `Field` | public | `Pedersen(nullifier, pub_x, pub_y)` — double-spend tag, publisher-bound |
+| `publisher_pubkey_x` | `Field` | public | Binds the spend to one publisher |
+| `publisher_pubkey_y` | `Field` | public | (part of the binding) |
+| `merkle_root` | `Field` | public | Root of the published **commitment** set |
+| `amount_range_bit` | `u8` | public | Must be `1`; asserts "amount is in range" |
 | `secret` | `Field` | **private** | Random per-payment |
-| `nullifier` | `Field` | **private** | Random per-payment, revealed only as hash |
+| `nullifier` | `Field` | **private** | Random per-payment, revealed only as a hash |
 | `amount` | `Field` | **private** | Payment amount (hidden on-chain) |
-| `merkle_path` | `[Field; 20]` | **private** | Merkle proof against spent-set |
-| `merkle_indices` | `[u1; 20]` | **private** | Merkle proof direction bits |
+| `merkle_path` | `[Field; 20]` | **private** | Sibling hashes for the membership proof |
+| `merkle_indices` | `[u1; 20]` | **private** | Left/right direction bits |
 
 ## Range proof (8 bits)
 
 ```rust
 let bits: [u1; 8] = amount.to_le_bits();
 let mut reconstructed: Field = 0;
+let mut weight: Field = 1;
 for i in 0..8 {
-    reconstructed = reconstructed + (bits[i] as Field) * (1 << i);
+    reconstructed = reconstructed + (bits[i] as Field) * weight;
+    weight = weight * 2;
 }
-assert(reconstructed == amount);
+assert(reconstructed == amount, "amount not in 8-bit range");
 ```
 
-This proves `amount ∈ [0, 255]` without revealing the actual value. Cost: 8 boolean
-constraints, ~0.01% of the circuit budget.
+`to_le_bits::<8>()` itself constrains the value to 8 bits (it traps on an out-of-range
+amount), and the explicit reconstruction is a documented defense-in-depth check.
 
 ## Pedersen commitments
 
-Uses Noir's `std::hash::pedersen_hash([x, y, ...])` which returns a BabyJubJub curve
-point embedded in the BN254 scalar field. This is the same primitive used by Aztec,
-Tornado Cash, and most production privacy protocols.
+Uses Noir's `std::hash::pedersen_hash([x, y, ...])`, a BabyJubJub-based hash over the
+BN254 scalar field — the same primitive used by Aztec, Tornado Cash, and most production
+privacy protocols.
 
 Source: <https://noir-lang.org/docs/noir/standard_library/cryptographic_primitives/hashes>
 
 ## Build & test
 
 ### Prerequisites
-
-- [`nargo` (Noir 1.0+)](https://noir-lang.org/docs/getting_started/installation)
-- Optionally: [`bb` (Barretenberg)](https://github.com/AztecProtocol/aztec-packages)
+- [`nargo` (Noir 1.0+)](https://noir-lang.org/docs/getting_started/installation) — tested with `1.0.0-beta.9`
+- Optionally: [`bb` (Barretenberg)](https://github.com/AztecProtocol/aztec-packages) for proving
 
 ### Test the circuit
 
@@ -77,56 +83,53 @@ cd circuits
 nargo test
 ```
 
-Expected output: 9 tests pass (helpers + range proof + determinism + collision).
+The 5 tests **execute `main()`** with concrete witnesses (not just helpers):
+
+| Test | Expectation |
+|---|---|
+| `test_valid_payment_proof_succeeds` | valid witness → satisfies |
+| `test_wrong_secret_fails` | wrong opening → `commitment mismatch` |
+| `test_replay_to_different_publisher_fails` | swapped pubkey → `nullifier/publisher binding mismatch` |
+| `test_out_of_range_amount_fails` | `amount = 256` → rejected |
+| `test_wrong_merkle_root_fails` | bad root → `commitment not in published merkle set` |
 
 ### Compile the circuit
 
 ```bash
 cd circuits
-nargo compile
-# Produces target/zk_paywall.json (ACIR bytecode)
+nargo compile          # → target/zk_paywall.json (ACIR bytecode)
+nargo info             # → ~190 ACIR opcodes for main
 ```
 
-### Generate Groth16 proof (for on-chain submission)
+## On-chain verification — two paths
 
-```bash
-# Requires jamesbachini/Noir-Groth16 backend (works with nargo compile output)
-# See: https://github.com/jamesbachini/Noir-Groth16
+> **Important (verified June 2026):** Noir proves with **UltraHonk** (Barretenberg), not
+> Groth16. The two paths below differ in how this circuit's proof reaches the chain.
 
-cd ../..  # back to repo root
-./scripts/run_circuit.sh
-# Produces target/groth16/{proof,verification_key,public_signals}.json
-```
+1. **UltraHonk (Noir-native, recommended).** Prove with `bb` and verify with an UltraHonk
+   Soroban verifier. The Stellar ZK docs link the
+   [indextree/ultrahonk_soroban_contract](https://github.com/indextree/ultrahonk_soroban_contract)
+   as the reference Noir verifier. This avoids any proof-system conversion.
 
-The Groth16 artifacts are what `contracts/verifier/` consumes on Stellar.
+2. **Groth16 (currently deployed).** `contracts/verifier/` is a working Groth16/BN254
+   verifier deployed to testnet (`CAW4VAGEOBMQIOVFJD354BXN5O3LRP3GZGMCDEPZDNQKDUN7TZYAR45V`).
+   Using it with **this** Noir circuit requires lowering ACIR → Groth16 (e.g.
+   [jamesbachini/Noir-Groth16](https://github.com/jamesbachini/Noir-Groth16)), which is the
+   fragile link. The Groth16 verifier is independently correct and proven with a real
+   arkworks-generated BN254 vector — see `contracts/verifier/src/test.rs`.
 
-## On-chain verification
-
-The compiled Groth16 verification key is embedded in the Soroban contract
-`contracts/verifier/`. When a user submits a proof, the contract:
-
-1. Recomputes the linear combination `vk_x = IC[0] + Σ public_input[i] * IC[i+1]`
-2. Calls `env.crypto().bn254().pairing_check([(-A, B), (α, β), (vk_x, γ), (C, δ)])`
-3. Returns `true` iff the proof is valid
-
-Reference: <https://github.com/stellar/soroban-examples/tree/main/groth16_verifier>
-
-## Why 8-bit range and not full Bulletproofs?
-
-Bulletproofs (range proof for arbitrary bit-widths) would let us hide amounts in
-`[0, 2^64]`, but they need ~2x the constraints and a longer proof generation step.
-
-For the MVP, 8 bits (0-255 centi-cents = $0.00-$2.55) is enough to demonstrate the
-primitive. Upgrading to Bulletproofs is a future PR that keeps the same commitment
-scheme, so it's a backward-compatible change.
+Deciding between (1) and (2) for VeilGate is an open architectural choice tracked in the
+project notes.
 
 ## Security notes
 
 - This circuit has not been audited. Do not use in production with real funds.
-- The `publisher binding` uses a hash-based shortcut. Real deployment should
-  implement EdDSA verification inside the circuit against the publisher pubkey.
-- The Merkle path length is hardcoded to 20. Adjust to match the deployed
-  nullifier-set depth.
+- The **publisher binding** is now enforced (publisher pubkey folded into the nullifier
+  hash). A stronger variant would EdDSA-verify a publisher signature inside the circuit.
+- The Merkle proof is **commitment membership** (allow-list), depth hardcoded to 20.
+  Adjust to match the deployed commitment-set depth.
+- 8-bit amount range (`$0.00–$2.55`) is an MVP choice; widening to a Bulletproof-style
+  range keeps the same commitment scheme.
 
 ## License
 
