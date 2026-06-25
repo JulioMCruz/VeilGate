@@ -1,0 +1,36 @@
+{
+  "name": "veilgate-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VeilGate — Next.js 14 App Router UI for the private paywall",
+  "license": "MIT",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "14.2.5",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "@stellar/freighter-api": "4.1.1",
+    "@stellar/stellar-sdk": "12.1.0",
+    "@noir-lang/noir_js": "1.0.0-beta.2",
+    "@aztec/bb.js": "0.71.0",
+    "snarkjs": "0.7.3",
+    "swr": "2.2.5"
+  },
+  "devDependencies": {
+    "@types/node": "20.14.10",
+    "@types/react": "18.3.3",
+    "@types/react-dom": "18.3.0",
+    "typescript": "5.5.3",
+    "eslint": "8.57.0",
+    "eslint-config-next": "14.2.5",
+    "tailwindcss": "3.4.6",
+    "postcss": "8.4.39",
+    "autoprefixer": "10.4.19"
+  }
+}
