@@ -14,6 +14,11 @@ mod merkle;
 mod poseidon;
 mod poseidon_consts;
 
+#[cfg(test)]
+mod test;
+#[cfg(test)]
+mod test_fixtures;
+
 use soroban_sdk::crypto::bn254::{Bn254Fr, Bn254G1Affine, Bn254G2Affine};
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token,
