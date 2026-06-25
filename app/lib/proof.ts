@@ -49,12 +49,17 @@ function toHex(bytes: Uint8Array): string {
   return '0x' + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** Phases emitted while a proof is being generated (for a live log). */
+export type ProofPhase = 'inputs' | 'witness' | 'proving' | 'done';
+
 /**
  * Generate a real UltraHonk proof for a payment of `amountCentiCents` (1..255).
+ * `onProgress` is called as each phase starts, so the UI can show a live log.
  */
 export async function generatePaymentProof(
   amountCentiCents: number,
-  publisher: { x: string; y: string } = DEFAULT_PUBLISHER
+  publisher: { x: string; y: string } = DEFAULT_PUBLISHER,
+  onProgress?: (phase: ProofPhase) => void
 ): Promise<UltraHonkProof> {
   if (amountCentiCents < 0 || amountCentiCents > 255) {
     throw new Error('amount must be in [0, 255] (8-bit range proof)');
@@ -63,6 +68,7 @@ export async function generatePaymentProof(
   const { Barretenberg, Fr, UltraHonkBackend } = await import('@aztec/bb.js');
   const { Noir } = await import('@noir-lang/noir_js');
 
+  onProgress?.('inputs');
   const bb = await Barretenberg.new({ threads: 1 });
   const fr = (h: string | bigint) => new Fr(BigInt(h));
 
@@ -100,16 +106,19 @@ export async function generatePaymentProof(
   };
 
   // 3. solve witness
+  onProgress?.('witness');
   const noir = new Noir(circuit as never);
   const { witness } = await noir.execute(inputs);
 
   // 4. real UltraHonk proof
+  onProgress?.('proving');
   const backend = new UltraHonkBackend((circuit as { bytecode: string }).bytecode, {
     threads: 1,
   });
   const { proof, publicInputs } = await backend.generateProof(witness);
   await backend.destroy?.();
   await bb.destroy?.();
+  onProgress?.('done');
 
   const proofBytes = toUint8(proof);
   return {
@@ -119,6 +128,35 @@ export async function generatePaymentProof(
     commitment: commitment.toString(),
     nullifierHash: nullifierHash.toString(),
   };
+}
+
+/**
+ * Pre-mint a Pedersen commitment for a future ("shielded") payment. Returns the
+ * real commitment + publisher-bound nullifier hash, computed with the same hash
+ * the circuit uses. No amount is returned to the caller's storage.
+ */
+export async function generateShieldCommitment(
+  amountCentiCents: number,
+  publisher: { x: string; y: string } = DEFAULT_PUBLISHER
+): Promise<{ commitment: string; nullifierHash: string }> {
+  if (amountCentiCents < 1 || amountCentiCents > 255) {
+    throw new Error('amount must be in [1, 255]');
+  }
+  const { Barretenberg, Fr } = await import('@aztec/bb.js');
+  const bb = await Barretenberg.new({ threads: 1 });
+  const fr = (h: string | bigint) => new Fr(BigInt(h));
+  const secret = randomFieldHex();
+  const nullifier = randomFieldHex();
+  const commitment = await bb.pedersenHash(
+    [fr(secret), fr(nullifier), fr(BigInt(amountCentiCents))],
+    0
+  );
+  const nullifierHash = await bb.pedersenHash(
+    [fr(nullifier), fr(publisher.x), fr(publisher.y)],
+    0
+  );
+  await bb.destroy?.();
+  return { commitment: commitment.toString(), nullifierHash: nullifierHash.toString() };
 }
 
 /**
