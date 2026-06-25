@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["verifier"]
+members = ["verifier", "pool"]
 exclude = []
 
 [workspace.package]
