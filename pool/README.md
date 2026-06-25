@@ -56,11 +56,25 @@ npm run build:circuit         # compile + groth16 setup + export vk  (scripts/)
 npm run prove                 # generate + verify a sample proof
 ```
 
+## On-chain verification — validated on testnet
+
+`scripts/encode_for_soroban.mjs` generates a withdraw proof and encodes it (+ the VK)
+to the BN254 verifier's byte format, then we invoke the **already-deployed** verifier
+(`CAW4VAGEOBMQIOVFJD354BXN5O3LRP3GZGMCDEPZDNQKDUN7TZYAR45V`) on testnet:
+
+```
+verify(...) with a valid Circom/snarkjs proof   -> true   (within testnet budget)
+verify(...) with a tampered public input        -> false
+```
+
+This confirms the encoding bridge (incl. EIP-197 G2 `c1`-first ordering) and that the
+Groth16-on-testnet path works. The pool contract reuses this verification.
+
 ## Status
 
 - [x] Circuit (`circuits/withdraw.circom`)
-- [ ] Groth16 setup + sample proof (snarkjs)
-- [ ] Proof verified by the BN254 Soroban verifier (encoding bridge)
+- [x] Groth16 setup + sample proof (snarkjs)
+- [x] Proof verified by the BN254 Soroban verifier on **testnet** (valid → true, tampered → false)
 - [ ] Pool contract (deposit / withdraw + SAC transfers + nullifier set)
 - [ ] Deployed to testnet; real deposit + withdraw moving tokens
 - [ ] Wired into the app
