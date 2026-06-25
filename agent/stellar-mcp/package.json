@@ -1,0 +1,18 @@
+{
+  "name": "veilgate-stellar-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VeilGate Stellar MCP integration — connects to JulioMCruz/Stellar-mcp for Soroban contract interactions",
+  "license": "MIT",
+  "scripts": {
+    "mcp:start": "node node_modules/@juliomcruz/stellarmcp/build/src/index.js",
+    "mcp:http": "MCP_TRANSPORT=http-sse PORT=3403 node node_modules/@juliomcruz/stellarmcp/build/src/index.js",
+    "mcp:health": "curl http://localhost:3403/health"
+  },
+  "dependencies": {
+    "@juliomcruz/stellarmcp": "github:JulioMCruz/Stellar-mcp#main"
+  },
+  "devDependencies": {
+    "typescript": "5.5.3"
+  }
+}
