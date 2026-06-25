@@ -1,5 +1,0 @@
-[package]
-name = "zk_paywall_tests"
-type = "lib"
-
-[dependencies]
