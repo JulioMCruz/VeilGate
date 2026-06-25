@@ -6,6 +6,9 @@ description = "VeilGate Soroban verifier for Groth16 ZK proofs (Protocol 25 BN25
 license = "MIT"
 publish = false
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 soroban-sdk = { workspace = true }
 
