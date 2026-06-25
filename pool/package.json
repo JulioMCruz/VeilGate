@@ -6,7 +6,8 @@
   "description": "VeilGate settlement layer — Circom withdraw circuit + Groth16 proving",
   "scripts": {
     "build:circuit": "bash scripts/build.sh",
-    "prove": "node scripts/prove.mjs"
+    "prove": "node scripts/prove.mjs",
+    "test": "node scripts/pathfor_test.mjs"
   },
   "dependencies": {
     "circomlib": "2.0.5",

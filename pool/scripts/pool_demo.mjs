@@ -32,8 +32,9 @@ const F = poseidon.F;
 const H2 = (a, b) => F.toObject(poseidon([a, b]));
 const H1 = (a) => F.toObject(poseidon([a]));
 
-const nullifier = randField();
-const secret = randField();
+// Deterministic when SECRET/NULLIFIER are set (used to freeze test fixtures).
+const nullifier = process.env.NULLIFIER ? BigInt(process.env.NULLIFIER) % R : randField();
+const secret = process.env.SECRET ? BigInt(process.env.SECRET) % R : randField();
 const commitment = H2(nullifier, secret);
 const nullifierHash = H1(nullifier);
 const zeros = [0n];
