@@ -1,64 +1,93 @@
-# VeilGate — Private Micropayment Paywall on Stellar
+# VeilGate — Private Micropayments on Stellar
 
-> Pay any content. Reveal nothing.
+> Pay a publisher. Reveal nothing about who you are.
 
-A privacy-preserving paywall on Stellar that lets readers pay for premium content
-(articles, research, API endpoints, datasets) **without revealing the payment amount** to
-the publisher or to on-chain observers. A zero-knowledge proof hides what you paid; the
-publisher still gets a payment they can verify is real.
+VeilGate lets a reader pay a publisher for content through a **zero-knowledge shielded pool**
+on Stellar. Real value moves on testnet, but the link between *your deposit* and *the payment
+the publisher receives* is broken — an on-chain observer cannot tell which deposit paid which
+publisher, and the publisher never learns your wallet identity.
 
-Built for the **Stellar Hacks: Real-World ZK** hackathon (deadline 29 Jun 2026 19:00 UTC).
-
----
-
-## Problem
-
-Publishers want to monetize content. Readers want privacy. Today you choose one:
-
-- **Stripe / credit card** — the publisher and the bank see your card, email, identity, the
-  exact amount, and your purchase history.
-- **Crypto on-chain** — anyone can see exactly how much you paid, when, and to whom. Worse
-  than cards for privacy.
-- **Subscriptions** — leak reading habits, require identity at signup, take a large cut.
-
-Privacy-respecting payment for content is unsolved on Stellar. ZK proofs make it possible:
-the publisher gets a payment they can verify, but the amount stays hidden.
-
-## Solution
-
-VeilGate uses a **zero-knowledge proof, generated in the reader's browser and verified by a
-Soroban smart contract**, to hide the payment amount while keeping the payment verifiable.
-
-**What the publisher sees**
-- That *someone* paid.
-- A **publisher-bound nullifier** (prevents double-spend; can't be replayed to another publisher; never reveals who).
-- A **Merkle root** proving the payment commitment is in the published commitment set.
-
-**What the publisher does NOT see**
-- How much you paid — only that it's within the agreed range.
-- Your wallet identity — the commitment is one-time and unlinked.
-
-**What an on-chain observer sees**
-- A Soroban verification call that returns `true`. No amount, no parties.
+Built for the **Stellar Hacks: Real-World ZK** hackathon.
 
 ---
 
-## Status — what actually works
+## What it actually does (and doesn't)
+
+VeilGate is a **fixed-denomination shielded pool**, so be precise about the privacy it gives:
+
+- **Hidden — unlinkability.** You deposit into a pool; later a withdrawal pays the publisher.
+  A Groth16 proof shows the withdrawal corresponds to *some* deposit in the pool without
+  revealing *which*. Deposit ↔ payment is unlinkable.
+- **Hidden — your identity.** The note (secret + nullifier) is one-time and never tied to your
+  wallet. The publisher only sees an address paying out of the pool contract.
+- **Public — the denomination.** The amount is the pool's fixed denomination (0.1 / 1 / 10 XLM).
+  Privacy comes from the anonymity set of equal-sized deposits, not from hiding the number.
+
+No custodian, no operator, no trusted root publisher — the **contract itself** computes and
+anchors the Merkle root on every deposit.
+
+> Research / hackathon code. Not audited — do not use with real funds.
+
+---
+
+## How a payment works
+
+```
+pick a denomination (0.1 / 1 / 10 XLM)
+        │
+        ▼
+1. note      reader's browser samples secret + nullifier, commitment = Poseidon(nullifier, secret)
+2. deposit   Freighter signs: pull the denomination into the pool, insert the commitment.
+             The CONTRACT recomputes the Merkle root on-chain with native Poseidon.
+3. prove     the browser rebuilds the tree from on-chain deposit events, then generates a
+             Groth16 proof (snarkjs) that the note is in the tree + a fresh nullifier hash +
+             a recipient binding — the secret never leaves the device.
+4. withdraw  the contract verifies the proof against a recent root, checks the nullifier is
+             unspent, and transfers the denomination to the publisher.
+```
+
+The deposit and the withdraw are two separate, unlinkable on-chain transactions.
+
+---
+
+## Status — what is verified
 
 | Piece | State |
 |---|---|
-| **ZK circuit** (Noir) | ✅ Real, enforced constraints; 5 tests execute `main()` |
-| **Browser proving** (Barretenberg) | ✅ Real UltraHonk proof generated + verified in-browser (~14.5 KB) |
-| **On-chain verify — Groth16/BN254** | ✅ Deployed + verified on **testnet** with a real proof vector |
-| **On-chain verify — UltraHonk (Noir-native)** | ✅ Verified on-chain on **localnet**; exceeds testnet's per-tx budget (see note) |
-| **Next.js app** | ✅ Builds; reader generates a real proof, amount never leaves the device |
+| **Shielded-pool settlement** (Soroban) | ✅ Real 0.1 / 1 XLM payments moved on **testnet**, deposit→prove→pay |
+| **Trustless on-chain Merkle root** | ✅ Contract recomputes the root with **native Poseidon** (`env.crypto_hazmat()`); no operator |
+| **Withdraw circuit** (Circom + Groth16) | ✅ membership + nullifier + recipient binding; ~11k constraints |
+| **On-chain Groth16/BN254 verify** | ✅ inline in the pool via native host functions — fits the testnet per-tx budget |
+| **Recipient binding** | ✅ proof bound to `recipient` on-chain (`sha256(strkey)`); front-run → `ProofInvalid` (testnet) |
+| **Multiple denominations** | ✅ 0.1 / 1 / 10 XLM, one pool each |
+| **Tests** | ✅ `cargo test -p pool` (7) + a tree-reconstruction proof test (`npm test`) |
+| **Next.js app** | ✅ Builds; full deposit→prove→pay flow with Freighter + browser proving |
 
-> **Honest finding.** UltraHonk verification runs in-wasm and is compute-heavy: on testnet it
-> exceeds the per-transaction budget, so it runs on a localnet with raised limits (or a future,
-> cheaper protocol version). The Groth16 verifier uses the **native** BN254 host functions
-> (`pairing_check`) and verifies fine on testnet. Both paths are real; they trade off differently.
+### Earlier exploration (kept, honest about its limits)
+A Noir circuit + Barretenberg **UltraHonk** path also exists (`circuits/`, `contracts/ULTRAHONK_ONCHAIN.md`).
+UltraHonk verification is compute-heavy and **exceeds the testnet per-tx budget** (works on a
+localnet with raised limits). The live product therefore settles via the **Groth16** path, which
+uses the native BN254 host functions and verifies on testnet.
 
-**Deployed Groth16 verifier (testnet):** `CAW4VAGEOBMQIOVFJD354BXN5O3LRP3GZGMCDEPZDNQKDUN7TZYAR45V`
+---
+
+## Deployed on testnet
+
+| What | Address |
+|---|---|
+| Pool — 0.1 XLM | `CDZGIFZFRFKYIMSPBLA2OSFVD5RIUVVVWRVN5LPAHYHDGH6LOEGKGD7H` |
+| Pool — 1 XLM | `CBIIKKJHZKA77YWXIITCUX6HFVEWIZAJYKO2Q6ZL3SJ3ZTFUY4RESJ2Z` |
+| Pool — 10 XLM | `CB27XGZ53S3WGDJE3MN3EHKPBXAMELAK7NY5ZD42ES7ZSLMF7AHTC57E` |
+| Token | native XLM SAC `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` |
+
+What was exercised on-chain (0.1 XLM pool):
+
+```
+deposit(commitment)            -> 0.1 XLM in; root recomputed ON-CHAIN == the prover's root
+withdraw(proof, …, ATTACKER)   -> Error #3 ProofInvalid   (recipient-bound; nullifier NOT spent)
+withdraw(proof, …, publisher)  -> proof verified on-chain, publisher paid 0.1 XLM
+re-withdraw same nullifier     -> Error #2 NullifierSpent  (double-spend blocked)
+```
 
 ---
 
@@ -67,69 +96,86 @@ Soroban smart contract**, to hide the payment amount while keeping the payment v
 ```mermaid
 flowchart TB
     subgraph Reader["Reader Browser"]
-        UI["Next.js 14 UI"]
-        BB["Barretenberg WASM (bb.js)"]
+        UI["Next.js 14 UI + Hermes agent"]
+        SJ["snarkjs (Groth16 proving)"]
         FW["Freighter Wallet"]
     end
 
-    subgraph Stellar["Stellar Soroban"]
-        VH["UltraHonk verifier (localnet)"]
-        VG["Groth16/BN254 verifier (testnet)"]
-        HF["BN254 host functions (Protocol 25)"]
+    subgraph Pool["Soroban shielded pool (per denomination)"]
+        TREE["on-chain Merkle tree + root history"]
+        POS["native Poseidon (crypto_hazmat)"]
+        VER["inline Groth16/BN254 verify (host functions)"]
+        NUL["nullifier set"]
     end
 
-    UI -->|"1. sample secret, nullifier, amount"| BB
-    BB -->|"2. Pedersen commitment + nullifier + UltraHonk proof"| UI
-    UI -->|"3. verify proof"| VH
-    UI -. "alt: Groth16 path" .-> VG
-    VG --> HF
-    UI -->|"4. unlock content"| UI
+    UI -->|"1. note: Poseidon(nullifier, secret)"| SJ
+    FW -->|"2. deposit(commitment)"| TREE
+    TREE --> POS
+    UI -->|"3. rebuild tree from events, Groth16 proof"| SJ
+    FW -->|"4. withdraw(proof, recipient)"| VER
+    VER --> NUL
+    VER -->|"pay denomination"| UI
 ```
 
 ---
 
 ## How it works
 
-### 1. ZK circuit (`circuits/`, Noir)
+### Withdraw circuit (`pool/circuits/withdraw.circom`, Groth16)
+Proves, in zero knowledge:
+1. **Knows a note** whose `commitment = Poseidon(nullifier, secret)`.
+2. **Membership**: the commitment is a leaf of a depth-20 Merkle tree with public `root`
+   (Poseidon hashes).
+3. **Nullifier**: publishes `nullifierHash = Poseidon(nullifier)` to prevent double-spend.
+4. **Recipient binding**: a public `recipient` field the contract re-derives, so the proof only
+   pays the intended account.
 
-`main` proves, in zero knowledge, that the prover:
+### Pool contract (`contracts/pool/`, Soroban / Rust)
+- **`merkle.rs`** — an on-chain incremental Merkle tree with a recent-root ring buffer
+  (`ROOT_HISTORY = 30`). `deposit` inserts the commitment and **recomputes the root on-chain**.
+- **`poseidon.rs`** — circomlib-compatible Poseidon(2) over BN254 via the native host function
+  `env.crypto_hazmat().poseidon_permutation` (feature `hazmat-crypto`), validated bit-for-bit
+  against circomlib.
+- **`lib.rs`** — `withdraw` runs the Groth16/BN254 pairing check inline via `g1_mul` / `g1_add` /
+  `pairing_check`, derives the recipient field from the `recipient` Address (`sha256(strkey)`),
+  checks the nullifier, and transfers the denomination. **No operator, no admin.**
 
-1. **Knows the opening** of a public commitment: `commitment = Pedersen(secret, nullifier, amount)`.
-2. **Derived a publisher-bound nullifier**: `nullifier_hash = Pedersen(nullifier, pub_x, pub_y)`
-   — so a proof can't be replayed to a different publisher, and the spent-set is scoped per publisher.
-3. **Amount is in range**: 8-bit range proof (`0..255` centi-cents).
-4. **Commitment is a member** of the publisher's published set: a Merkle proof against a public
-   `merkle_root`, enforced.
-
-Every check is a real constraint. `nargo test` runs 5 tests that **execute `main()`** with concrete
-witnesses (valid → satisfies; wrong secret, replayed publisher, out-of-range amount, and wrong root → rejected).
-
-### 2. Browser proving (`app/lib/proof.ts`, Barretenberg)
-
-The reader's browser samples `(secret, nullifier, amount)`, computes the public inputs with
-`bb.pedersenHash` (bit-for-bit identical to the circuit's `std::hash::pedersen_hash`), solves the
-witness, and generates a **real UltraHonk proof** (~14.5 KB). It is verified client-side before the
-content unlocks. The amount never leaves the device.
-
-### 3. On-chain verification (`contracts/`)
-
-- **Groth16/BN254** (`contracts/verifier/`): a Soroban contract running the Groth16 pairing check via
-  the **native BN254 host functions** (`g1_mul`, `g1_add`, `pairing_check`, Protocol 25). Deployed to
-  testnet and proven against a real BN254 proof vector (`src/test.rs`).
-- **UltraHonk** (`contracts/ULTRAHONK_ONCHAIN.md`): the Noir-native path — the browser/CLI UltraHonk
-  proof is verified directly on-chain. Demonstrated on localnet (see the budget note above).
+### App (`app/`, Next.js 14)
+`lib/pool.ts` runs the whole flow in the browser: sample the note, deposit via Freighter, rebuild
+the tree from on-chain `deposit` events to get the membership path, generate the Groth16 proof with
+snarkjs, and withdraw. `components/hermes.tsx` is a guided assistant that walks the reader through it.
 
 ---
 
-## Privacy & security model
+## Tests
 
-- **Amount hidden:** only the range bit is public; the value stays private (8-bit MVP range).
-- **No double-spend:** the publisher-bound `nullifier_hash` is revealed and recorded; a second spend
-  of the same note reproduces it and is rejected.
-- **No cross-publisher replay:** the nullifier folds in the publisher pubkey.
-- **Unlinkable:** the commitment is one-time and not tied to a wallet identity.
+```bash
+# Contract: native Poseidon vector, on-chain root == prover root, withdraw pays,
+# front-run rejected, double-spend rejected, unknown root rejected, root history.
+cd contracts && cargo test -p pool          # 7 tests
 
-> Not audited. Research/hackathon code — do not use with real funds.
+# Tree reconstruction: rebuild the tree for several leaf indices and prove each verifies.
+cd pool && npm install && npm test          # pathFor(1,0) / (2,1) / (5,3) -> proofs verify
+```
+
+---
+
+## Build & run
+
+```bash
+# 1. circuit artifacts + a demo note/proof
+cd pool && npm install && npm run build:circuit
+PUBLISHER=G... node scripts/pool_demo.mjs        # writes /tmp/pool_demo.env
+
+# 2. build + deploy a pool (one per denomination)
+cd ../contracts && stellar contract build
+stellar contract deploy --wasm target/wasm32v1-none/release/pool.wasm --source <key> --network testnet -- \
+  --token <XLM SAC> --denom 1000000 \
+  --vk_alpha <hex> --vk_beta <hex> --vk_gamma <hex> --vk_delta <hex> --vk_ic '[<hex>,…]'
+
+# 3. run the app (full deposit -> prove -> pay with Freighter)
+cd ../app && npm install && cp .env.example .env.local && npm run dev
+```
 
 ---
 
@@ -137,59 +183,28 @@ content unlocks. The amount never leaves the device.
 
 ```
 VeilGate/
-├── circuits/                 # Noir ZK circuit (+ inline tests, Prover.toml, artifacts)
-│   ├── src/main.nr
-│   └── artifacts/            # vk / proof / public_inputs
+├── pool/                       # settlement: Circom withdraw circuit + Groth16 proving
+│   ├── circuits/withdraw.circom
+│   └── scripts/                # pool_demo.mjs (note+proof), pathfor_test.mjs (npm test)
 ├── contracts/
-│   ├── verifier/             # Soroban Groth16/BN254 verifier (Rust) + real-vector test
-│   └── ULTRAHONK_ONCHAIN.md  # Noir-native on-chain verification recipe + findings
-├── app/                      # Next.js 14 paywall UI (real in-browser proving)
-│   └── lib/proof.ts          # UltraHonk proof generation + client-side verify
-├── scripts/
-│   ├── prove_ultrahonk.mjs       # generate + verify a proof from the circuit
-│   └── build_proof_artifacts.sh  # regenerate vk/proof/public_inputs
-├── packages/verifier-bindings/   # TypeScript bindings for the verifier
-└── agent/                    # Agent plugin + MCP tools (pay via chat)
-```
-
----
-
-## Build & run
-
-### Circuit
-```bash
-cd circuits
-nargo test        # 5 tests, all execute main()
-nargo compile     # -> target/zk_paywall.json
-```
-
-### Groth16 verifier (testnet path)
-```bash
-cd contracts
-cargo test            # verifies a real BN254 proof vector
-stellar contract build
-```
-
-### App
-```bash
-cd app
-npm install
-npm run dev           # generates a real proof in the browser
-```
-
-### Generate a proof from the circuit
-```bash
-cd scripts && npm install && node prove_ultrahonk.mjs
+│   ├── pool/                   # the shielded pool (trustless tree, native Poseidon, inline verify)
+│   │   └── src/                # lib.rs, merkle.rs, poseidon.rs, test.rs
+│   ├── verifier/               # standalone Groth16/BN254 verifier (Rust) + real-vector test
+│   └── ULTRAHONK_ONCHAIN.md    # earlier Noir-native path + findings (localnet)
+├── circuits/                   # earlier Noir ZK circuit exploration
+├── app/                        # Next.js 14 app — deposit→prove→pay, Hermes agent
+│   └── lib/pool.ts             # browser settlement (snarkjs + Freighter + tree rebuild)
+└── agent/                      # agent plugin + MCP tools (pay via chat)
 ```
 
 ---
 
 ## Toolchain
 
-- **Noir** (`nargo` 1.0.0-beta.9) — ZK circuit DSL
-- **Barretenberg** (`bb` v0.87.0 / `bb.js` 0.87.2) — UltraHonk proving
-- **Soroban SDK** (Rust) — on-chain verifier; native BN254 host functions (Protocol 25)
+- **Circom 2** + **snarkjs** (Groth16) — the withdraw circuit and browser proving
+- **Soroban SDK** (Rust) — the pool; native **BN254** + **Poseidon** host functions (Protocol 25)
 - **Next.js 14**, **Freighter**, **Stellar SDK** — reader app + wallet
+- **Noir** / **Barretenberg** — earlier UltraHonk exploration (localnet)
 
 ---
 
