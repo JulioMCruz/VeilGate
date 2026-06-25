@@ -2,23 +2,15 @@
 
 import { useState } from 'react';
 import { useWallet } from '@/lib/providers/wallet-provider';
-import {
-  generateWithdraw,
-  recipientFieldFor,
-  deposit,
-  pushRoot,
-  withdraw,
-  POOL_ID,
-} from '@/lib/pool';
+import { payPrivately, POOL_ID } from '@/lib/pool';
 import { Card, CopyButton, PrivacyBadge, truncate } from '@/components/ui';
 
-type Stage = 'idle' | 'proving' | 'depositing' | 'anchoring' | 'paying' | 'done' | 'error';
+type Stage = 'idle' | 'depositing' | 'proving' | 'paying' | 'done' | 'error';
 
 const STAGE_LABEL: Record<Stage, string> = {
   idle: '',
-  proving: 'Generating proof in your browser…',
   depositing: 'Depositing 0.1 XLM into the pool…',
-  anchoring: 'Publishing the Merkle root…',
+  proving: 'Rebuilding the tree & proving in your browser…',
   paying: 'Verifying on-chain & paying the publisher…',
   done: '',
   error: '',
@@ -50,21 +42,13 @@ export function SettleFlow() {
     setError(null);
     setReceipt(null);
     try {
-      const recipientField = recipientFieldFor(publisher);
-
-      setStage('proving');
-      const art = await generateWithdraw(recipientField);
-
-      setStage('depositing');
-      const depositHash = await deposit(address, art.commitmentHex);
-
-      setStage('anchoring');
-      await pushRoot(art.rootHex);
-
-      setStage('paying');
-      const withdrawHash = await withdraw(address, art, publisher);
-
-      setReceipt({ depositHash, withdrawHash, nullifier: art.nullifierHashHex, publisher });
+      const res = await payPrivately(address, publisher, (s) => setStage(s));
+      setReceipt({
+        depositHash: res.depositHash,
+        withdrawHash: res.withdrawHash,
+        nullifier: res.nullifierHash,
+        publisher,
+      });
       setStage('done');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Settlement failed');
@@ -127,14 +111,11 @@ export function SettleFlow() {
           {STAGE_LABEL[stage]}
         </h2>
         <ol className="mx-auto mt-6 max-w-xs space-y-2 text-left text-sm">
-          <Step done={['depositing', 'anchoring', 'paying'].includes(stage)} active={stage === 'proving'}>
-            Generate the proof (browser)
-          </Step>
-          <Step done={['anchoring', 'paying'].includes(stage)} active={stage === 'depositing'}>
+          <Step done={['proving', 'paying'].includes(stage)} active={stage === 'depositing'}>
             Deposit 0.1 XLM (you sign)
           </Step>
-          <Step done={['paying'].includes(stage)} active={stage === 'anchoring'}>
-            Publish the Merkle root
+          <Step done={['paying'].includes(stage)} active={stage === 'proving'}>
+            Rebuild tree &amp; prove (browser)
           </Step>
           <Step done={false} active={stage === 'paying'}>
             Verify on-chain &amp; pay publisher

@@ -1,29 +1,31 @@
-//! VeilGate shielded pool (fixed-denomination, Tornado / Privacy-Pools style).
+//! VeilGate shielded pool (fixed-denomination) — TRUSTLESS variant.
 //!
-//! Real value moves on-chain: `deposit` pulls a fixed denomination of a token
-//! into the pool and records a commitment; `withdraw` ("pay") verifies a Groth16
-//! proof of membership + nullifier + recipient binding, then transfers the
-//! denomination to the publisher. The amount per note is the public, fixed
-//! denomination; what stays private is the *link* between a payment and its
-//! deposit (unlinkability).
-//!
-//! Merkle root anchoring (MVP): an `admin` publishes valid roots via `push_root`
-//! (the tree is built off-chain from on-chain `deposit` events). A fully trustless
-//! variant recomputes the root on-chain with the circuit's hash — deferred until
-//! the SDK exposes a constructible Poseidon (see pool/README.md).
+//! Real value moves on-chain: `deposit` pulls a fixed denomination of a token into
+//! the pool and inserts a commitment into an on-chain incremental Merkle tree —
+//! the contract recomputes the root itself using the native Poseidon
+//! (`env.crypto_hazmat()`), so the root is anchored to real deposits with **no
+//! operator and no off-chain trust**. `withdraw` ("pay") verifies a Groth16 proof
+//! of membership + nullifier + recipient binding against any recent root, then
+//! transfers the denomination to the publisher.
 
 #![no_std]
+
+mod merkle;
+mod poseidon;
+mod poseidon_consts;
 
 use soroban_sdk::crypto::bn254::{Bn254Fr, Bn254G1Affine, Bn254G2Affine};
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token,
-    Address, BytesN, Env, Vec,
+    Address, Bytes, BytesN, Env, Vec, U256,
 };
+
+/// Commitment tree depth — must match the withdraw circuit (TREE_DEPTH = 20).
+const LEVELS: u32 = 20;
 
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
-    Admin,
     Token,
     Denom,
     VkAlpha,
@@ -31,10 +33,7 @@ pub enum DataKey {
     VkGamma,
     VkDelta,
     VkIc,
-    LeafCount,
-    Root(BytesN<32>),
     Nullifier(BytesN<32>),
-    Commitment(BytesN<32>),
 }
 
 #[contracterror]
@@ -44,7 +43,7 @@ pub enum Error {
     RootUnknown = 1,
     NullifierSpent = 2,
     ProofInvalid = 3,
-    CommitmentExists = 4,
+    TreeFull = 4,
 }
 
 #[contract]
@@ -52,11 +51,10 @@ pub struct Pool;
 
 #[contractimpl]
 impl Pool {
-    /// Initialize the pool with the token, fixed denomination, admin, and the
-    /// withdraw circuit's verification key.
+    /// Initialize the pool with the token, fixed denomination, and the withdraw
+    /// circuit's verification key. Also initializes the on-chain Merkle tree.
     pub fn __constructor(
         env: Env,
-        admin: Address,
         token: Address,
         denom: i128,
         vk_alpha: BytesN<64>,
@@ -66,7 +64,6 @@ impl Pool {
         vk_ic: Vec<BytesN<64>>,
     ) {
         let s = env.storage().instance();
-        s.set(&DataKey::Admin, &admin);
         s.set(&DataKey::Token, &token);
         s.set(&DataKey::Denom, &denom);
         s.set(&DataKey::VkAlpha, &vk_alpha);
@@ -74,16 +71,13 @@ impl Pool {
         s.set(&DataKey::VkGamma, &vk_gamma);
         s.set(&DataKey::VkDelta, &vk_delta);
         s.set(&DataKey::VkIc, &vk_ic);
-        s.set(&DataKey::LeafCount, &0u32);
+        merkle::init(&env, LEVELS);
     }
 
-    /// Deposit one fixed denomination and register `commitment`. Returns the leaf index.
+    /// Deposit one fixed denomination and insert `commitment` into the tree.
+    /// The contract recomputes the Merkle root on-chain. Returns the leaf index.
     pub fn deposit(env: Env, from: Address, commitment: BytesN<32>) -> u32 {
         from.require_auth();
-        let p = env.storage().persistent();
-        if p.has(&DataKey::Commitment(commitment.clone())) {
-            panic_with_error!(&env, Error::CommitmentExists);
-        }
         let s = env.storage().instance();
         let token: Address = s.get(&DataKey::Token).unwrap();
         let denom: i128 = s.get(&DataKey::Denom).unwrap();
@@ -94,35 +88,29 @@ impl Pool {
             &denom,
         );
 
-        let idx: u32 = s.get(&DataKey::LeafCount).unwrap();
-        p.set(&DataKey::Commitment(commitment.clone()), &idx);
-        s.set(&DataKey::LeafCount, &(idx + 1));
+        let leaf = bytes32_to_u256(&env, &commitment);
+        let idx = match merkle::insert(&env, leaf) {
+            Some(i) => i,
+            None => panic_with_error!(&env, Error::TreeFull),
+        };
         env.events().publish((symbol_short!("deposit"),), (commitment, idx));
         idx
     }
 
-    /// Admin publishes a Merkle root computed off-chain from the deposit set.
-    pub fn push_root(env: Env, root: BytesN<32>) {
-        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
-        admin.require_auth();
-        env.storage().persistent().set(&DataKey::Root(root.clone()), &());
-        env.events().publish((symbol_short!("root"),), root);
+    pub fn is_known_root(env: Env, root: BytesN<32>) -> bool {
+        merkle::is_known_root(&env, &bytes32_to_u256(&env, &root))
     }
 
-    pub fn is_root(env: Env, root: BytesN<32>) -> bool {
-        env.storage().persistent().has(&DataKey::Root(root))
+    pub fn current_root(env: Env) -> BytesN<32> {
+        u256_to_bytes32(&env, &merkle::current_root(&env))
     }
 
     pub fn is_spent(env: Env, nullifier_hash: BytesN<32>) -> bool {
         env.storage().persistent().has(&DataKey::Nullifier(nullifier_hash))
     }
 
-    /// Withdraw ("pay"): verify the proof against a known root, ensure the
-    /// nullifier is unspent, then transfer one denomination to `recipient`.
-    ///
-    /// `recipient_field` is the recipient public input the proof was bound to.
-    /// (Binding it cryptographically to `recipient` on-chain is a follow-up; for
-    /// the MVP the caller submits its own withdrawal.)
+    /// Withdraw ("pay"): verify the proof against a recent on-chain root, ensure
+    /// the nullifier is unspent, then transfer one denomination to `recipient`.
     pub fn withdraw(
         env: Env,
         proof_a: BytesN<64>,
@@ -133,10 +121,10 @@ impl Pool {
         recipient_field: BytesN<32>,
         recipient: Address,
     ) {
-        let p = env.storage().persistent();
-        if !p.has(&DataKey::Root(root.clone())) {
+        if !merkle::is_known_root(&env, &bytes32_to_u256(&env, &root)) {
             panic_with_error!(&env, Error::RootUnknown);
         }
+        let p = env.storage().persistent();
         if p.has(&DataKey::Nullifier(nullifier_hash.clone())) {
             panic_with_error!(&env, Error::NullifierSpent);
         }
@@ -201,4 +189,16 @@ impl Pool {
 
         bn.pairing_check(g1, g2)
     }
+}
+
+fn bytes32_to_u256(env: &Env, b: &BytesN<32>) -> U256 {
+    let bytes: Bytes = b.clone().into();
+    U256::from_be_bytes(env, &bytes)
+}
+
+fn u256_to_bytes32(env: &Env, v: &U256) -> BytesN<32> {
+    let bytes = v.to_be_bytes();
+    let mut arr = [0u8; 32];
+    bytes.copy_into_slice(&mut arr);
+    BytesN::from_array(env, &arr)
 }

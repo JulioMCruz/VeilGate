@@ -1,10 +1,11 @@
 /**
- * VeilGate pool settlement (browser) — the REAL on-chain private payment.
+ * VeilGate pool settlement (browser) — TRUSTLESS, real on-chain private payment.
  *
- * Flow: deposit a fixed denomination of XLM into the pool (registers a commitment),
- * publish the Merkle root (admin, via /api/pool/push-root), then withdraw — which
- * verifies a Groth16 proof on-chain and pays the publisher. The proof is generated
- * IN THE BROWSER (snarkjs), so the note's secret never leaves the device.
+ * The pool recomputes the Merkle root on-chain on every deposit (no operator), so
+ * the flow is: generate a note → deposit (Freighter) → rebuild the tree from the
+ * on-chain deposit events to get this note's path → generate the Groth16 proof in
+ * the browser (secret never leaves the device) → withdraw, which verifies the
+ * proof against a recent on-chain root and pays the publisher.
  */
 
 'use client';
@@ -18,12 +19,13 @@ import {
   Address,
   xdr,
   BASE_FEE,
+  scValToNative,
 } from '@stellar/stellar-sdk';
 import { signTransaction } from '@stellar/freighter-api';
 
 export const POOL_ID =
   process.env.NEXT_PUBLIC_POOL_CONTRACT_ID ||
-  'CBAF7SJIQMDEU35NVAZ5TJUH574R2ZC545URGBCDAOLY6YEMFJQNZXAH';
+  'CBFFBAZFR4ZN5F6CZPLK2QKNAGI674FQSMLOO2UEBO7M5WAE6PCHA2EW';
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const LEVELS = 20;
 const R = BigInt(
@@ -41,15 +43,6 @@ function randField(): bigint {
   return n % R;
 }
 
-export interface WithdrawArtifacts {
-  commitmentHex: string;
-  rootHex: string;
-  nullifierHashHex: string;
-  recipientFieldHex: string;
-  proof: { a: string; b: string; c: string }; // hex, verifier byte format
-}
-
-/** Encode a snarkjs proof point to the verifier's byte format. */
 function g1(p: string[]): string {
   return be32hex(BigInt(p[0])) + be32hex(BigInt(p[1]));
 }
@@ -57,59 +50,81 @@ function g2(p: string[][]): string {
   return be32hex(BigInt(p[0][1])) + be32hex(BigInt(p[0][0])) + be32hex(BigInt(p[1][1])) + be32hex(BigInt(p[1][0]));
 }
 
-/**
- * Build a fresh note and generate the withdraw proof (browser, snarkjs).
- * `recipientField` binds the proof to the publisher (a field element).
- */
-export async function generateWithdraw(recipientField: bigint): Promise<WithdrawArtifacts> {
-  const secret = randField();
-  const nullifier = randField();
-  const commitment = poseidon2([nullifier, secret]);
-  const nullifierHash = poseidon1([nullifier]);
-
-  const zeros: bigint[] = [0n];
-  for (let i = 1; i < LEVELS; i++) zeros.push(poseidon2([zeros[i - 1], zeros[i - 1]]));
-  const pathElements: string[] = [];
-  const pathIndices: number[] = [];
-  let node = commitment;
-  for (let i = 0; i < LEVELS; i++) {
-    pathElements.push(zeros[i].toString());
-    pathIndices.push(0);
-    node = poseidon2([node, zeros[i]]);
-  }
-  const root = node;
-
-  const input = {
-    root: root.toString(),
-    nullifierHash: nullifierHash.toString(),
-    recipient: recipientField.toString(),
-    nullifier: nullifier.toString(),
-    secret: secret.toString(),
-    pathElements,
-    pathIndices,
-  };
-
-  const snarkjs = await import('snarkjs');
-  const { proof } = await snarkjs.groth16.fullProve(
-    input,
-    '/pool/withdraw.wasm',
-    '/pool/withdraw_final.zkey'
-  );
-
-  return {
-    commitmentHex: be32hex(commitment),
-    rootHex: be32hex(root),
-    nullifierHashHex: be32hex(nullifierHash),
-    recipientFieldHex: be32hex(recipientField),
-    proof: { a: g1(proof.pi_a), b: g2(proof.pi_b), c: g1(proof.pi_c) },
-  };
+export interface Note {
+  secret: bigint;
+  nullifier: bigint;
+  commitment: bigint;
 }
 
-/** Derive the recipient field bound in the proof from a publisher address. */
-export function recipientFieldFor(_publisher: string): bigint {
-  // MVP: a fixed demo field (matches the value used in pool_demo). Binding this
-  // to the actual address on-chain is a follow-up.
-  return 0x5075626c6973686572n % R;
+export function newNote(): Note {
+  const secret = randField();
+  const nullifier = randField();
+  return { secret, nullifier, commitment: poseidon2([nullifier, secret]) };
+}
+
+/** Pre-computed zero-subtree roots for an empty Poseidon tree. */
+function zeros(): bigint[] {
+  const z = [0n];
+  for (let i = 1; i <= LEVELS; i++) z.push(poseidon2([z[i - 1], z[i - 1]]));
+  return z;
+}
+
+/** Rebuild the tree from all leaves and return the membership path for `index`. */
+function pathFor(leaves: bigint[], index: number): {
+  root: bigint;
+  pathElements: string[];
+  pathIndices: number[];
+} {
+  const z = zeros();
+  let cur = leaves.slice();
+  let idx = index;
+  const pathElements: string[] = [];
+  const pathIndices: number[] = [];
+  for (let level = 0; level < LEVELS; level++) {
+    const sibIdx = idx ^ 1;
+    const sibling = sibIdx < cur.length ? cur[sibIdx] : z[level];
+    pathElements.push(sibling.toString());
+    pathIndices.push(idx & 1);
+    const next: bigint[] = [];
+    for (let i = 0; i < cur.length; i += 2) {
+      const left = cur[i];
+      const right = i + 1 < cur.length ? cur[i + 1] : z[level];
+      next.push(poseidon2([left, right]));
+    }
+    cur = next.length ? next : [z[level + 1]];
+    idx >>= 1;
+  }
+  return { root: cur[0], pathElements, pathIndices };
+}
+
+/**
+ * Read every commitment deposited, in leaf-index order, from chain events.
+ * Single page (≤200) — enough for the demo; production would paginate.
+ */
+async function fetchCommitments(server: rpc.Server): Promise<bigint[]> {
+  const latest = await server.getLatestLedger();
+  const start = Math.max(1, latest.sequence - 16000);
+  const res = await server.getEvents({
+    startLedger: start,
+    filters: [{ type: 'contract', contractIds: [POOL_ID] }],
+    limit: 200,
+  });
+  const byIndex = new Map<number, bigint>();
+  for (const ev of res.events ?? []) {
+    try {
+      const topics = (ev.topic ?? []).map((t) => scValToNative(t));
+      if (topics[0] !== 'deposit') continue;
+      const data = scValToNative(ev.value) as [Uint8Array, number];
+      const commitment = BigInt('0x' + Buffer.from(data[0]).toString('hex'));
+      byIndex.set(Number(data[1]), commitment);
+    } catch {
+      /* skip non-deposit events */
+    }
+  }
+  const max = byIndex.size ? Math.max(...byIndex.keys()) : -1;
+  const leaves: bigint[] = [];
+  for (let i = 0; i <= max; i++) leaves.push(byIndex.get(i) ?? 0n);
+  return leaves;
 }
 
 async function signAndSend(server: rpc.Server, tx: string): Promise<string> {
@@ -127,18 +142,9 @@ async function signAndSend(server: rpc.Server, tx: string): Promise<string> {
   throw new Error('transaction timed out');
 }
 
-async function invoke(
-  caller: string,
-  fn: string,
-  args: xdr.ScVal[]
-): Promise<string> {
-  const server = new rpc.Server(RPC_URL);
+async function invoke(server: rpc.Server, caller: string, fn: string, args: xdr.ScVal[]): Promise<string> {
   const account = await server.getAccount(caller);
-  const op = Operation.invokeContractFunction({
-    contract: POOL_ID,
-    function: fn,
-    args,
-  });
+  const op = Operation.invokeContractFunction({ contract: POOL_ID, function: fn, args });
   const built = new TransactionBuilder(account, {
     fee: (Number(BASE_FEE) * 1000).toString(),
     networkPassphrase: Networks.TESTNET,
@@ -150,37 +156,74 @@ async function invoke(
   return signAndSend(server, prepared.toXDR());
 }
 
-/** deposit(from, commitment) — pulls the fixed denomination of XLM into the pool. */
-export async function deposit(from: string, commitmentHex: string): Promise<string> {
-  return invoke(from, 'deposit', [
+export interface PayResult {
+  depositHash: string;
+  withdrawHash: string;
+  nullifierHash: string;
+}
+
+/** Demo recipient field bound in the proof (binding to the Address is a follow-up). */
+export function recipientFieldFor(_publisher: string): bigint {
+  return 0x5075626c6973686572n % R;
+}
+
+/**
+ * Full trustless flow: deposit the note, rebuild the tree from chain, prove
+ * membership in the browser, and withdraw (which pays the publisher).
+ * `onStage` reports progress: 'depositing' | 'proving' | 'paying'.
+ */
+export async function payPrivately(
+  from: string,
+  publisher: string,
+  onStage?: (s: 'depositing' | 'proving' | 'paying') => void
+): Promise<PayResult> {
+  const server = new rpc.Server(RPC_URL);
+  const note = newNote();
+  const recipientField = recipientFieldFor(publisher);
+  const nullifierHash = poseidon1([note.nullifier]);
+
+  // 1. deposit (commitment) — contract recomputes the root on-chain
+  onStage?.('depositing');
+  const commitmentHex = be32hex(note.commitment);
+  const depositHash = await invoke(server, from, 'deposit', [
     new Address(from).toScVal(),
     xdr.ScVal.scvBytes(bufFromHex(commitmentHex)),
   ]);
-}
 
-/** withdraw(...) — verifies the proof on-chain and pays the publisher. */
-export async function withdraw(
-  caller: string,
-  a: WithdrawArtifacts,
-  recipient: string
-): Promise<string> {
-  return invoke(caller, 'withdraw', [
-    xdr.ScVal.scvBytes(bufFromHex(a.proof.a)),
-    xdr.ScVal.scvBytes(bufFromHex(a.proof.b)),
-    xdr.ScVal.scvBytes(bufFromHex(a.proof.c)),
-    xdr.ScVal.scvBytes(bufFromHex(a.rootHex)),
-    xdr.ScVal.scvBytes(bufFromHex(a.nullifierHashHex)),
-    xdr.ScVal.scvBytes(bufFromHex(a.recipientFieldHex)),
-    new Address(recipient).toScVal(),
+  // 2. rebuild the tree from chain events -> this note's path
+  onStage?.('proving');
+  const leaves = await fetchCommitments(server);
+  const index = leaves.findIndex((c) => c === note.commitment);
+  if (index < 0) throw new Error('deposit not yet indexed; retry');
+  const { root, pathElements, pathIndices } = pathFor(leaves, index);
+
+  // 3. Groth16 proof (browser) — secret stays local
+  const snarkjs = await import('snarkjs');
+  const { proof } = await snarkjs.groth16.fullProve(
+    {
+      root: root.toString(),
+      nullifierHash: nullifierHash.toString(),
+      recipient: recipientField.toString(),
+      nullifier: note.nullifier.toString(),
+      secret: note.secret.toString(),
+      pathElements,
+      pathIndices,
+    },
+    '/pool/withdraw.wasm',
+    '/pool/withdraw_final.zkey'
+  );
+
+  // 4. withdraw — verifies on-chain against the recent root, pays the publisher
+  onStage?.('paying');
+  const withdrawHash = await invoke(server, from, 'withdraw', [
+    xdr.ScVal.scvBytes(bufFromHex(g1(proof.pi_a))),
+    xdr.ScVal.scvBytes(bufFromHex(g2(proof.pi_b))),
+    xdr.ScVal.scvBytes(bufFromHex(g1(proof.pi_c))),
+    xdr.ScVal.scvBytes(bufFromHex(be32hex(root))),
+    xdr.ScVal.scvBytes(bufFromHex(be32hex(nullifierHash))),
+    xdr.ScVal.scvBytes(bufFromHex(be32hex(recipientField))),
+    new Address(publisher).toScVal(),
   ]);
-}
 
-/** Ask the operator (server) to publish the Merkle root. */
-export async function pushRoot(rootHex: string): Promise<void> {
-  const res = await fetch('/api/pool/push-root', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ root: rootHex }),
-  });
-  if (!res.ok) throw new Error(`push-root failed: ${await res.text()}`);
+  return { depositHash, withdrawHash, nullifierHash: be32hex(nullifierHash) };
 }
