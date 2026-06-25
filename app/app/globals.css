@@ -3,15 +3,13 @@
 @tailwind utilities;
 
 :root {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --background: #ffffff;
+  --foreground: #171717;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --background: #ffffff;
-    --foreground: #171717;
-  }
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 body {
@@ -21,5 +19,25 @@ body {
 }
 
 .glow {
-  text-shadow: 0 0 12px rgba(139, 92, 246, 0.5);
+  text-shadow: 0 0 16px rgba(139, 92, 246, 0.55);
+}
+
+/* Radial glow used during proof generation */
+.proof-glow {
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.55) 0%, rgba(139, 92, 246, 0) 70%);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Cascadia Code', monospace;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-proof-pulse,
+  .animate-ring-expand,
+  .animate-slide-in {
+    animation: none !important;
+  }
+  .proof-glow {
+    opacity: 0.6;
+  }
 }

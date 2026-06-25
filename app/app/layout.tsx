@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { WalletProvider } from '@/lib/providers/wallet-provider';
 
 export const metadata: Metadata = {
   title: 'VeilGate — Private Micropayment Paywall',
@@ -13,9 +14,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-gradient-to-b from-veil-50 to-white dark:from-veil-900 dark:to-black">
-        {children}
+    <html lang="en" className="dark">
+      <body className="min-h-screen bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+        <WalletProvider>{children}</WalletProvider>
       </body>
     </html>
   );
