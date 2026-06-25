@@ -1,10 +1,17 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useWallet } from '@/lib/providers/wallet-provider';
 import { Card, CopyButton, TestnetPill } from '@/components/ui';
 
 export default function WalletPage() {
+  const router = useRouter();
   const { address, balances, balancesLoading, disconnect } = useWallet();
+
+  function handleDisconnect() {
+    disconnect();
+    router.push('/');
+  }
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -66,7 +73,7 @@ export default function WalletPage() {
 
       <div className="mt-6 text-center">
         <button
-          onClick={disconnect}
+          onClick={handleDisconnect}
           className="rounded-xl border border-veil-900/70 px-6 py-2.5 text-sm text-gray-300 hover:bg-veil-900/40"
         >
           Disconnect wallet

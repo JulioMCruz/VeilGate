@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useWallet } from '@/lib/providers/wallet-provider';
 import { useHermes } from '@/components/hermes';
 import { TestnetPill, CopyButton, truncate } from '@/components/ui';
@@ -14,8 +14,14 @@ const NAV = [
 ];
 
 export function TopBar() {
+  const router = useRouter();
   const { address, disconnect, balances } = useWallet();
   const xlm = balances.find((b) => b.asset === 'XLM');
+
+  function handleDisconnect() {
+    disconnect();
+    router.push('/');
+  }
   return (
     <header className="flex items-center justify-between border-b border-veil-900/70 px-4 py-3 sm:px-6">
       <Link href="/dashboard/pay" className="glow font-bold text-veil-400">
@@ -31,7 +37,7 @@ export function TopBar() {
           </span>
         )}
         <button
-          onClick={disconnect}
+          onClick={handleDisconnect}
           className="rounded-lg px-3 py-1.5 text-xs text-gray-400 hover:bg-veil-900/40 hover:text-white"
         >
           Disconnect
