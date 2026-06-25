@@ -49,30 +49,30 @@ fully verifiable.
 ```mermaid
 flowchart TB
     subgraph Reader["Reader Browser"]
-        UI[Next.js UI]
-        Freighter[Freighter Wallet]
-        NoirWASM[Noir WASM<br/>@aztec/bb.js]
+        UI["Next.js UI"]
+        Freighter["Freighter Wallet"]
+        NoirWASM["Noir WASM @aztec/bb.js"]
     end
 
     subgraph Publisher["Publisher Server"]
-        Gateway[Paywall Gateway<br/>Express/Next API]
-        Bearer[Bearer Token Issuer]
+        Gateway["Paywall Gateway Express/Next API"]
+        Bearer["Bearer Token Issuer"]
     end
 
     subgraph Stellar["Stellar Network"]
-        Soroban[Soroban Verifier<br/>env.crypto().bn254]
-        SAC[USDC SAC]
+        Soroban["Soroban Verifier env.crypto().bn254"]
+        SAC["USDC SAC"]
     end
 
-    UI -->|1. Click pay| NoirWASM
-    NoirWASM -->|2. Generate commitment<br/>+ nullifier + ZK proof| UI
-    UI -->|3. Sign Soroban tx| Freighter
-    Freighter -->|4. Submit verify_proof| Soroban
-    Soroban -->|5. Pairing check OK| SAC
-    SAC -->|6. Lock USDC| Soroban
-    Soroban -->|7. Emit event| Gateway
-    Gateway -->|8. Mint bearer token| Bearer
-    Bearer -->|9. Token + content| UI
+    UI -->|"1. Click pay"| NoirWASM
+    NoirWASM -->|"2. Generate commitment nullifier ZK proof"| UI
+    UI -->|"3. Sign Soroban tx"| Freighter
+    Freighter -->|"4. Submit verify_proof"| Soroban
+    Soroban -->|"5. Pairing check OK"| Gateway
+    Gateway -->|"6. transfer USDC to publisher"| SAC
+    SAC -->|"7. Lock complete"| Gateway
+    Gateway -->|"8. Emit event Bearer token"| Bearer
+    Bearer -->|"9. Token + content"| UI
 ```
 
 ### Components
@@ -194,22 +194,22 @@ Field: 32 bytes big-endian.
 ```mermaid
 sequenceDiagram
     participant R as Reader
-    participant W as Wallet (Freighter)
+    participant W as Wallet Freighter
     participant P as Publisher
-    participant S as Stellar (Soroban)
+    participant S as Stellar Soroban
 
     R->>P: GET /premium-article
-    P-->>R: 402 Payment Required<br/>{publisher_pubkey, price_hash}
-    R->>R: Generate commitment<br/>+ nullifier + amount<br/>(client-side, WASM)
+    P-->>R: 402 Payment Required publisher_pubkey price_hash
+    R->>R: Generate commitment nullifier amount client-side WASM
     R->>W: Sign verify_proof tx
     W-->>R: signed XDR
     R->>S: Submit tx
     S->>S: pairing_check == true
-    S-->>R: TX confirmed + event
-    R->>P: POST /redeem<br/>{nullifier_hash, proof}
+    S-->>R: TX confirmed event
+    R->>P: POST redeem nullifier_hash proof
     P->>P: Mark nullifier spent
-    P-->>R: Bearer token + content
-    Note over R,S: Amount hidden.<br/>Publisher confirmed paid.<br/>No double-spend possible.
+    P-->>R: Bearer token plus content
+    Note over R,S: Amount hidden. Publisher confirmed paid. No double-spend possible.
 ```
 
 ### Hermes slash commands (parallel interface)
