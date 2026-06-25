@@ -1,0 +1,16 @@
+[package]
+name = "zk_paywall"
+type = "bin"
+authors = ["PerkOS Team"]
+description = "VeilGate — Private micropayment paywall circuit for Stellar"
+license = "MIT"
+# Noir version compatible with stable noir_stdlib pedersen + bit ops
+# Tested against: noir-lang/noir v1.0.0-beta.2+
+compiler_version = ">=1.0.0"
+
+[dependencies]
+# noir_stdlib is included by default in nargo 1.0+
+
+[[bin]]
+name = "zk_paywall"
+path = "src/main.nr"
