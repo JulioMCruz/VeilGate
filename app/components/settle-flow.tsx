@@ -1,0 +1,225 @@
+'use client';
+
+import { useState } from 'react';
+import { useWallet } from '@/lib/providers/wallet-provider';
+import {
+  generateWithdraw,
+  recipientFieldFor,
+  deposit,
+  pushRoot,
+  withdraw,
+  POOL_ID,
+} from '@/lib/pool';
+import { Card, CopyButton, PrivacyBadge, truncate } from '@/components/ui';
+
+type Stage = 'idle' | 'proving' | 'depositing' | 'anchoring' | 'paying' | 'done' | 'error';
+
+const STAGE_LABEL: Record<Stage, string> = {
+  idle: '',
+  proving: 'Generating proof in your browser…',
+  depositing: 'Depositing 0.1 XLM into the pool…',
+  anchoring: 'Publishing the Merkle root…',
+  paying: 'Verifying on-chain & paying the publisher…',
+  done: '',
+  error: '',
+};
+
+interface Receipt {
+  depositHash: string;
+  withdrawHash: string;
+  nullifier: string;
+  publisher: string;
+}
+
+export function SettleFlow() {
+  const { address } = useWallet();
+  const [publisher, setPublisher] = useState('');
+  const [stage, setStage] = useState<Stage>('idle');
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const busy = !['idle', 'done', 'error'].includes(stage);
+
+  async function pay() {
+    if (!address) return;
+    if (!/^G[A-Z2-7]{55}$/.test(publisher)) {
+      setError('Enter a valid Stellar account address (G…) for the publisher.');
+      setStage('error');
+      return;
+    }
+    setError(null);
+    setReceipt(null);
+    try {
+      const recipientField = recipientFieldFor(publisher);
+
+      setStage('proving');
+      const art = await generateWithdraw(recipientField);
+
+      setStage('depositing');
+      const depositHash = await deposit(address, art.commitmentHex);
+
+      setStage('anchoring');
+      await pushRoot(art.rootHex);
+
+      setStage('paying');
+      const withdrawHash = await withdraw(address, art, publisher);
+
+      setReceipt({ depositHash, withdrawHash, nullifier: art.nullifierHashHex, publisher });
+      setStage('done');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Settlement failed');
+      setStage('error');
+    }
+  }
+
+  if (stage === 'done' && receipt) {
+    return (
+      <div className="mx-auto max-w-xl text-center">
+        <div className="mx-auto mb-4 flex h-16 w-16 animate-ring-expand items-center justify-center rounded-full bg-green-600 text-2xl text-white">
+          ✓
+        </div>
+        <h2 className="text-xl font-bold">Publisher paid — on testnet</h2>
+        <p className="mt-2 text-sm text-gray-400">
+          0.1 XLM moved to the publisher through the shielded pool. The proof was verified
+          on-chain; your deposit and the payment are unlinkable.
+        </p>
+        <Card className="mt-6 text-left">
+          <dl className="mono space-y-2 text-xs">
+            <Row k="Publisher" v={truncate(receipt.publisher, 6, 6)} />
+            <Row k="Amount" v="0.1 XLM" />
+            <ReceiptLink k="Deposit tx" hash={receipt.depositHash} />
+            <ReceiptLink k="Withdraw tx" hash={receipt.withdrawHash} />
+            <div className="flex items-center justify-between">
+              <dt className="text-gray-500">Nullifier</dt>
+              <dd className="flex items-center gap-1 text-gray-200">
+                {truncate(receipt.nullifier, 10, 6)}
+                <CopyButton value={receipt.nullifier} label="nullifier" />
+              </dd>
+            </div>
+            <div className="flex items-center justify-between">
+              <dt className="text-gray-500">Link to your deposit</dt>
+              <dd>
+                <PrivacyBadge>private</PrivacyBadge>
+              </dd>
+            </div>
+          </dl>
+        </Card>
+        <button
+          onClick={() => {
+            setStage('idle');
+            setReceipt(null);
+          }}
+          className="mt-5 rounded-xl border border-veil-900/70 px-6 py-3 text-sm text-gray-300 hover:bg-veil-900/40"
+        >
+          Pay another
+        </button>
+      </div>
+    );
+  }
+
+  if (busy) {
+    return (
+      <div className="mx-auto max-w-xl text-center">
+        <div className="relative mx-auto mb-8 h-24 w-24">
+          <div className="proof-glow absolute inset-0 animate-proof-pulse rounded-full" />
+        </div>
+        <h2 className="text-lg font-bold" tabIndex={-1}>
+          {STAGE_LABEL[stage]}
+        </h2>
+        <ol className="mx-auto mt-6 max-w-xs space-y-2 text-left text-sm">
+          <Step done={['depositing', 'anchoring', 'paying'].includes(stage)} active={stage === 'proving'}>
+            Generate the proof (browser)
+          </Step>
+          <Step done={['anchoring', 'paying'].includes(stage)} active={stage === 'depositing'}>
+            Deposit 0.1 XLM (you sign)
+          </Step>
+          <Step done={['paying'].includes(stage)} active={stage === 'anchoring'}>
+            Publish the Merkle root
+          </Step>
+          <Step done={false} active={stage === 'paying'}>
+            Verify on-chain &amp; pay publisher
+          </Step>
+        </ol>
+        <p className="mt-6 text-xs text-gray-500">
+          Real testnet transactions — this takes ~20–40 seconds.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-xl">
+      <h1 className="text-2xl font-bold">Pay a publisher — real settlement</h1>
+      <p className="mt-1 text-sm text-gray-400">
+        A real 0.1 XLM payment on Stellar testnet, routed through the shielded pool. Your
+        deposit and the payment can&apos;t be linked on-chain.
+      </p>
+
+      <Card className="mt-6">
+        <p className="text-xs font-semibold uppercase tracking-wide text-veil-400">
+          Publisher address
+        </p>
+        <input
+          value={publisher}
+          onChange={(e) => setPublisher(e.target.value.trim())}
+          placeholder="G…"
+          className="mono mt-2 w-full rounded-lg border border-veil-900/70 bg-gray-900 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-veil-500 focus:outline-none"
+        />
+        <dl className="mt-4 space-y-1.5 text-sm">
+          <Row k="Amount" v="0.1 XLM (fixed denomination)" />
+          <Row k="Pool" v={truncate(POOL_ID, 6, 6)} />
+          <Row k="Network" v="Stellar Testnet" />
+        </dl>
+        <button
+          onClick={pay}
+          className="mt-5 w-full rounded-xl bg-veil-600 px-6 py-3 font-medium text-white hover:bg-veil-500"
+        >
+          Deposit &amp; pay privately
+        </button>
+        <p className="mt-2 text-center text-[11px] text-gray-500">
+          You&apos;ll sign two transactions in Freighter (deposit + withdraw).
+        </p>
+      </Card>
+
+      {error && <p className="mt-4 text-center text-sm text-red-400">{error}</p>}
+    </div>
+  );
+}
+
+function Row({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <dt className="text-gray-500">{k}</dt>
+      <dd className="text-gray-200">{v}</dd>
+    </div>
+  );
+}
+
+function ReceiptLink({ k, hash }: { k: string; hash: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <dt className="text-gray-500">{k}</dt>
+      <dd>
+        <a
+          href={`https://stellar.expert/explorer/testnet/tx/${hash}`}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="text-veil-400 hover:underline"
+        >
+          {truncate(hash, 8, 6)} →
+        </a>
+      </dd>
+    </div>
+  );
+}
+
+function Step({ done, active, children }: { done: boolean; active: boolean; children: React.ReactNode }) {
+  return (
+    <li className="flex items-center gap-2">
+      <span className={done ? 'text-veil-400' : active ? 'animate-proof-pulse text-amber-400' : 'text-gray-600'}>
+        {done ? '✓' : active ? '▸' : '○'}
+      </span>
+      <span className={active || done ? 'text-gray-200' : 'text-gray-500'}>{children}</span>
+    </li>
+  );
+}

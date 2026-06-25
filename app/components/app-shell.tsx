@@ -8,6 +8,7 @@ import { TestnetPill, CopyButton, truncate } from '@/components/ui';
 
 const NAV = [
   { href: '/dashboard/pay', label: 'Pay', icon: '◈' },
+  { href: '/dashboard/settle', label: 'Settle', icon: '⇄' },
   { href: '/dashboard/history', label: 'History', icon: '⊞' },
   { href: '/dashboard/shield', label: 'Shield', icon: '🛡' },
   { href: '/dashboard/wallet', label: 'Wallet', icon: '⬡' },
