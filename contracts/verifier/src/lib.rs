@@ -1,29 +1,30 @@
-//! VeilGate — Soroban verifier for Groth16 ZK proofs
+//! VeilGate — Soroban verifier for Groth16 ZK proofs over BN254
 //!
-//! On-chain verifier that accepts a Groth16 proof over BN254 and runs the
-//! pairing check via Protocol 25 host functions (`env.crypto().bn254()`,
-//! CAP-0074).
-//!
-//! Reference: <https://github.com/stellar/soroban-examples/tree/main/groth16_verifier>
+//! On-chain verifier that accepts a Groth16 proof over BN254 (alt_bn128) and
+//! runs the pairing check via the Soroban BN254 host functions
+//! (`env.crypto().bn254()`, introduced in Protocol 25 / CAP-0074).
 //!
 //! What this contract does:
-//! 1. Accepts the proof (A, B, C) and the verification key
-//! 2. Computes the linear combination `vk_x = IC[0] + Σ public_input[i] * IC[i+1]`
-//! 3. Runs `pairing_check([(-A, B), (α, β), (vk_x, γ), (C, δ)])`
-//! 4. Returns true iff the proof is valid
+//! 1. Accepts the proof `(A, B, C)` and the verification key `(α, β, γ, δ, IC)`
+//! 2. Computes the linear combination `vk_x = IC[0] + Σ public_input[i] · IC[i+1]`
+//! 3. Runs `pairing_check([-A, α, vk_x, C], [B, β, γ, δ])`
+//! 4. Returns `true` iff the proof is valid
 //!
 //! What this contract does NOT do:
-//! - It does not move USDC. That's the publisher's job (the off-chain Gateway).
-//! - It does not store commitments or nullifiers. The Merkle root is passed
-//!   in as a public input by the caller.
+//! - It does not move USDC. That's the publisher's job (the off-chain gateway).
+//! - It does not store commitments or nullifiers. The Merkle root is passed in
+//!   as a public input by the caller. The verifier is a pure function.
+//!
+//! ## Encoding (Soroban BN254 host, Ethereum-compatible)
+//! - G1 (`BytesN<64>`):  `be(X) || be(Y)`, each a 32-byte big-endian Fp element.
+//! - G2 (`BytesN<128>`): `be(X) || be(Y)`, each coordinate an Fp2 encoded as
+//!   `be(c1) || be(c0)` (imaginary component first).
+//! - Scalar / public input (`BytesN<32>`): 32-byte big-endian Fr element.
 
 #![no_std]
 
-mod bn254;
-
+use soroban_sdk::crypto::bn254::{Bn254Fr, Bn254G1Affine, Bn254G2Affine};
 use soroban_sdk::{contract, contractimpl, BytesN, Env, Vec};
-
-use crate::bn254::{negate_g1, pairing_pairs};
 
 #[contract]
 pub struct Verifier;
@@ -33,88 +34,70 @@ impl Verifier {
     /// Verify a Groth16 proof over BN254.
     ///
     /// # Arguments
-    ///
-    /// * `proof_a` — G1 point (64 bytes)
-    /// * `proof_b` — G2 point (128 bytes)
-    /// * `proof_c` — G1 point (64 bytes)
-    /// * `vk_alpha_g1` — VK element α (G1, 64 bytes)
-    /// * `vk_beta_g2` — VK element β (G2, 128 bytes)
-    /// * `vk_gamma_g2` — VK element γ (G2, 128 bytes)
-    /// * `vk_delta_g2` — VK element δ (G2, 128 bytes)
-    /// * `vk_ic` — VK IC points (IC[0], IC[1], ..., IC[N]) — G1 each
-    /// * `public_inputs` — Public input scalars (each 32 bytes)
+    /// * `proof_a` — G1 point `A` (64 bytes)
+    /// * `proof_b` — G2 point `B` (128 bytes)
+    /// * `proof_c` — G1 point `C` (64 bytes)
+    /// * `vk_alpha` — VK element α (G1, 64 bytes)
+    /// * `vk_beta`  — VK element β (G2, 128 bytes)
+    /// * `vk_gamma` — VK element γ (G2, 128 bytes)
+    /// * `vk_delta` — VK element δ (G2, 128 bytes)
+    /// * `vk_ic`    — VK IC points `[IC[0], IC[1], …, IC[N]]` (G1 each).
+    ///                Length MUST equal `public_inputs.len() + 1`.
+    /// * `public_inputs` — Public input scalars (32 bytes each).
     ///
     /// # Returns
+    /// `true` iff the proof satisfies the Groth16 verification equation:
+    /// `e(-A, B) · e(α, β) · e(vk_x, γ) · e(C, δ) == 1`.
     ///
-    /// `true` iff the proof is valid (pairing check passes).
-    ///
-    /// # Reference
-    ///
-    /// Implements the standard Groth16 verification equation:
-    ///
-    /// e(-A, B) * e(α, β) * e(vk_x, γ) * e(C, δ) == 1
+    /// # Panics
+    /// Traps if `vk_ic` is shorter than `public_inputs.len() + 1`, or if any
+    /// point/scalar is not a valid BN254 encoding (enforced by the host).
     pub fn verify(
         env: Env,
         proof_a: BytesN<64>,
         proof_b: BytesN<128>,
         proof_c: BytesN<64>,
-        vk_alpha_g1: BytesN<64>,
-        vk_beta_g2: BytesN<128>,
-        vk_gamma_g2: BytesN<128>,
-        vk_delta_g2: BytesN<128>,
+        vk_alpha: BytesN<64>,
+        vk_beta: BytesN<128>,
+        vk_gamma: BytesN<128>,
+        vk_delta: BytesN<128>,
         vk_ic: Vec<BytesN<64>>,
         public_inputs: Vec<BytesN<32>>,
     ) -> bool {
-        // Step 1: Compute vk_x = IC[0] + Σ public_input[i] * IC[i+1]
-        //
-        // Soroban requires get_unchecked for indexed access in storage-backed
-        // Vec. For our in-memory IC vec we use the safe `get` and unwrap.
-        let mut vk_x: BytesN<64> = vk_ic
-            .get(0)
-            .expect("vk_ic must have at least IC[0]")
-            .clone();
+        let bn = env.crypto().bn254();
 
-        for (i, public_input) in public_inputs.iter().enumerate() {
-            let ic_i = vk_ic
-                .get((i + 1) as u32)
-                .unwrap_or_else(|| panic!("missing IC[{}] in vk_ic", i + 1));
-
-            // scalar * G1 via host function (CAP-0074)
-            let scaled = env.crypto().bn254().g1_mul(ic_i, public_input);
-            vk_x = env.crypto().bn254().g1_add(vk_x, scaled);
+        // Step 1: vk_x = IC[0] + Σ public_input[i] · IC[i+1]
+        let mut vk_x = Bn254G1Affine::from_bytes(vk_ic.get(0).expect("vk_ic missing IC[0]"));
+        for (i, input) in public_inputs.iter().enumerate() {
+            let ic = Bn254G1Affine::from_bytes(
+                vk_ic
+                    .get((i + 1) as u32)
+                    .expect("vk_ic missing IC element for a public input"),
+            );
+            let scalar = Bn254Fr::from_bytes(input);
+            let term = bn.g1_mul(&ic, &scalar);
+            vk_x = bn.g1_add(&vk_x, &term);
         }
 
-        // Step 2: Compute -A (negate the y-coordinate mod p)
-        let neg_a = negate_g1(&env, &proof_a);
+        // Step 2: -A (native point negation — no hand-rolled field math).
+        let neg_a = -Bn254G1Affine::from_bytes(proof_a);
 
-        // Step 3: Build the 4 pairs for the pairing check
-        //
-        // e(-A, B) * e(α, β) * e(vk_x, γ) * e(C, δ) == 1
-        let pairs = pairing_pairs(
-            &env,
-            &[
-                (neg_a, proof_b.clone()),
-                (vk_alpha_g1, vk_beta_g2),
-                (vk_x, vk_gamma_g2),
-                (proof_c, vk_delta_g2),
-            ],
-        );
+        // Step 3: assemble the four pairs as two parallel vectors.
+        //   e(-A, B) · e(α, β) · e(vk_x, γ) · e(C, δ) == 1
+        let mut g1: Vec<Bn254G1Affine> = Vec::new(&env);
+        g1.push_back(neg_a);
+        g1.push_back(Bn254G1Affine::from_bytes(vk_alpha));
+        g1.push_back(vk_x);
+        g1.push_back(Bn254G1Affine::from_bytes(proof_c));
 
-        // Step 4: Run the multi-pairing check via host function (CAP-0074)
-        env.crypto().bn254().pairing_check(pairs)
-    }
+        let mut g2: Vec<Bn254G2Affine> = Vec::new(&env);
+        g2.push_back(Bn254G2Affine::from_bytes(proof_b));
+        g2.push_back(Bn254G2Affine::from_bytes(vk_beta));
+        g2.push_back(Bn254G2Affine::from_bytes(vk_gamma));
+        g2.push_back(Bn254G2Affine::from_bytes(vk_delta));
 
-    /// Return the BN254 base field prime used by this verifier.
-    ///
-    /// Helpful for off-chain clients that need to confirm they're sending
-    /// inputs in the correct field.
-    pub fn field_prime(_env: Env) -> u64 {
-        // Just expose a small witness — the actual prime is hardcoded in bn254.rs
-        // BN254 base field prime (low 64 bits):
-        // 0x30644e72e131a029b85045b68181585a
-        //   = 21888242871839275222246405745257275088696311157297823662689037894645226208583
-        // Returns the last 8 bytes as a u64 for quick sanity-check.
-        0x970e5a18c2d6f3a2
+        // Step 4: multi-pairing check via host function.
+        bn.pairing_check(g1, g2)
     }
 }
 
