@@ -17,7 +17,7 @@ mod poseidon_consts;
 use soroban_sdk::crypto::bn254::{Bn254Fr, Bn254G1Affine, Bn254G2Affine};
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, token,
-    Address, Bytes, BytesN, Env, Vec, U256,
+    Address, Bytes, BytesN, Env, String, Vec, U256,
 };
 
 /// Commitment tree depth — must match the withdraw circuit (TREE_DEPTH = 20).
@@ -111,6 +111,10 @@ impl Pool {
 
     /// Withdraw ("pay"): verify the proof against a recent on-chain root, ensure
     /// the nullifier is unspent, then transfer one denomination to `recipient`.
+    ///
+    /// The third public input is **derived from `recipient` on-chain** (not taken
+    /// from the caller), so the proof is cryptographically bound to who gets paid —
+    /// a front-runner that swaps in a different `recipient` invalidates the proof.
     pub fn withdraw(
         env: Env,
         proof_a: BytesN<64>,
@@ -118,7 +122,6 @@ impl Pool {
         proof_c: BytesN<64>,
         root: BytesN<32>,
         nullifier_hash: BytesN<32>,
-        recipient_field: BytesN<32>,
         recipient: Address,
     ) {
         if !merkle::is_known_root(&env, &bytes32_to_u256(&env, &root)) {
@@ -128,6 +131,8 @@ impl Pool {
         if p.has(&DataKey::Nullifier(nullifier_hash.clone())) {
             panic_with_error!(&env, Error::NullifierSpent);
         }
+
+        let recipient_field = recipient_field_of(&env, &recipient);
 
         let mut public_inputs: Vec<BytesN<32>> = Vec::new(&env);
         public_inputs.push_back(root);
@@ -200,5 +205,22 @@ fn u256_to_bytes32(env: &Env, v: &U256) -> BytesN<32> {
     let bytes = v.to_be_bytes();
     let mut arr = [0u8; 32];
     bytes.copy_into_slice(&mut arr);
+    BytesN::from_array(env, &arr)
+}
+
+/// Derive the proof's `recipient` field element from a recipient Address:
+/// `sha256(strkey)` with the top byte zeroed (248-bit, so always < the BN254
+/// scalar field). The browser derives the identical value and binds it into the
+/// proof, so the proof only verifies for this exact recipient.
+fn recipient_field_of(env: &Env, recipient: &Address) -> BytesN<32> {
+    let s: String = recipient.to_string();
+    let len = s.len() as usize;
+    // G... / C... strkeys are 56 chars.
+    let mut sbuf = [0u8; 56];
+    s.copy_into_slice(&mut sbuf[..len]);
+    let bytes = Bytes::from_slice(env, &sbuf[..len]);
+    let digest: BytesN<32> = env.crypto().sha256(&bytes).into();
+    let mut arr = digest.to_array();
+    arr[0] = 0;
     BytesN::from_array(env, &arr)
 }

@@ -4,6 +4,7 @@
 // Use the same note across deposit -> push_root -> withdraw.
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { buildPoseidon } from 'circomlibjs';
@@ -46,7 +47,14 @@ for (let i = 0; i < LEVELS; i++) {
   cur = H2(cur, zeros[i]);
 }
 const root = cur;
-const recipient = 0x5075626c6973686572n % R;
+
+// recipient field = sha256(strkey) with the top byte zeroed (248-bit, < r).
+// MUST match the contract's recipient_field_of(Address).
+const publisher = process.env.PUBLISHER;
+if (!publisher) throw new Error('set PUBLISHER=G... (the recipient strkey)');
+const digest = createHash('sha256').update(Buffer.from(publisher, 'ascii')).digest();
+digest[0] = 0;
+const recipient = BigInt('0x' + digest.toString('hex'));
 
 const input = {
   root: root.toString(),
