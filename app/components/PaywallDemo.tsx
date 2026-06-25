@@ -2,61 +2,50 @@
 
 import { useState } from 'react';
 import { ConnectWallet } from './ConnectWallet';
-import { generatePaymentProof } from '@/lib/proof';
-import { signSorobanTx } from '@/lib/wallet';
-import { buildVerifyTx, submitSorobanTx } from '@/lib/soroban';
+import { generatePaymentProof, verifyPaymentProof } from '@/lib/proof';
 import type { WalletAddress, PaymentReceipt } from '@/lib/types';
 
-const TESTNET_PASSPHRASE = 'Test SDF Network ; September 2015';
+type Stage = 'idle' | 'proving' | 'verifying';
 
 export function PaywallDemo() {
   const [wallet, setWallet] = useState<WalletAddress | null>(null);
   const [amount, setAmount] = useState(100); // centi-cents
-  const [paying, setPaying] = useState(false);
+  const [stage, setStage] = useState<Stage>('idle');
   const [receipt, setReceipt] = useState<PaymentReceipt | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const paying = stage !== 'idle';
 
   async function handlePay() {
     if (!wallet) {
       setError('Connect wallet first');
       return;
     }
-    setPaying(true);
     setError(null);
     setReceipt(null);
     try {
-      // 1. Generate ZK proof
-      const { challenge, proof } = await generatePaymentProof(amount);
+      // 1. Generate a REAL UltraHonk proof in the browser. The amount stays
+      //    private; only the public inputs (commitment, nullifier hash, …) leave.
+      setStage('proving');
+      const bundle = await generatePaymentProof(amount);
 
-      // 2. Build Soroban tx
-      const vk = {
-        alpha_g1: '0x' + '0'.repeat(128),
-        beta_g2: '0x' + '0'.replace(/./g, '0').repeat(128),
-        gamma_g2: '0x' + '0'.repeat(128),
-        delta_g2: '0x' + '0'.repeat(128),
-        ic: ['0x' + '0'.repeat(128), '0x' + '0'.repeat(128), '0x' + '0'.repeat(128)],
-      };
+      // 2. Verify it client-side before unlocking.
+      setStage('verifying');
+      const ok = await verifyPaymentProof(bundle);
+      if (!ok) throw new Error('proof failed to verify');
 
-      const xdr = await buildVerifyTx(proof, vk, wallet.address);
-
-      // 3. Sign with Freighter
-      const signedXdr = await signSorobanTx(xdr, TESTNET_PASSPHRASE);
-
-      // 4. Submit
-      const txHash = await submitSorobanTx(signedXdr);
-
-      // 5. Receive bearer token (placeholder)
-      const bearer = `vg_${txHash.slice(0, 16)}`;
+      const bearer = `vg_${bundle.nullifierHash.slice(2, 18)}`;
       setReceipt({
-        txHash,
-        nullifierHash: challenge.nullifierHash,
+        nullifierHash: bundle.nullifierHash,
+        proofBytes: bundle.proof.length,
+        verified: ok,
         bearerToken: bearer,
         contentUrl: '/premium/content',
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Payment failed');
+      setError(e instanceof Error ? e.message : 'Proof generation failed');
     } finally {
-      setPaying(false);
+      setStage('idle');
     }
   }
 
@@ -91,8 +80,15 @@ export function PaywallDemo() {
           disabled={paying}
           className="rounded-xl bg-veil-600 px-6 py-3 text-white shadow hover:bg-veil-500 transition disabled:opacity-50"
         >
-          {paying ? 'Generating proof...' : `Pay ${amount} centi-cents`}
+          {stage === 'proving'
+            ? 'Generating ZK proof…'
+            : stage === 'verifying'
+              ? 'Verifying proof…'
+              : `Pay ${amount} centi-cents privately`}
         </button>
+        <p className="text-center text-[11px] text-gray-400">
+          A real UltraHonk proof is generated in your browser. The amount never leaves the device.
+        </p>
       </div>
 
       {error && (
@@ -102,13 +98,13 @@ export function PaywallDemo() {
       {receipt && (
         <div className="mt-6 rounded-lg border border-green-200 bg-green-50 p-4 dark:bg-green-900/20">
           <p className="text-sm font-semibold text-green-700 dark:text-green-300">
-            Payment verified
+            ZK proof verified ✓ — amount hidden
           </p>
-          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400 font-mono break-all">
-            TX: {receipt.txHash}
+          <p className="mt-2 text-xs text-gray-600 dark:text-gray-400 font-mono break-all">
+            Nullifier: {receipt.nullifierHash.slice(0, 24)}…
           </p>
-          <p className="mt-1 text-xs text-gray-600 dark:text-gray-400 font-mono break-all">
-            Nullifier: {receipt.nullifierHash.slice(0, 20)}...
+          <p className="mt-1 text-xs text-gray-500">
+            Real UltraHonk proof: {receipt.proofBytes.toLocaleString()} bytes
           </p>
           <a
             href={receipt.contentUrl}

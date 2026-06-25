@@ -74,7 +74,7 @@ export function useStellarWallet() {
   }, []);
 
   const signTx = useCallback(
-    async (xdr: string, networkPassphrase: string): Promise<string> {
+    async (xdr: string, networkPassphrase: string): Promise<string> => {
       if (!wallet) {
         throw new Error("Wallet not connected");
       }

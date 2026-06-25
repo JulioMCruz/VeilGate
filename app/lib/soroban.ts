@@ -46,7 +46,7 @@ export async function buildVerifyTx(
   })
     .addOperation(
       Operation.invokeContractFunction({
-        contract,
+        contract: contract.toString(),
         function: 'verify',
         args: [
           nativeToScVal(proofA, { type: 'bytes' }),

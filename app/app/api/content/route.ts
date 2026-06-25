@@ -22,7 +22,7 @@ const USDC_CONTRACT =
  * Middleware: check x402 payment header.
  * Returns 402 if no valid payment, 200 if valid.
  */
-export async function middleware(request: NextRequest) {
+async function checkPayment(request: NextRequest) {
   const paymentHeader = request.headers.get("X-PAYMENT");
 
   if (!paymentHeader) {
@@ -66,7 +66,7 @@ export async function middleware(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   // Check payment
-  const paymentCheck = await middleware(request);
+  const paymentCheck = await checkPayment(request);
   if (paymentCheck) {
     return paymentCheck;
   }

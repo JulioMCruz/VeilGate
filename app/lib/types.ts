@@ -27,20 +27,27 @@ export interface PaywallChallenge {
   amountRangeBit: number;
 }
 
-export interface ZKProofBundle {
-  /** Public inputs in order matching the circuit */
+/** A real UltraHonk proof produced in-browser from the Noir circuit. */
+export interface UltraHonkProof {
+  /** Raw proof bytes (UltraHonk, ~14.5 KB) */
+  proof: Uint8Array;
+  /** Proof as a 0x-hex string (for display / transport) */
+  proofHex: string;
+  /** Public inputs in circuit order (6 field elements, 0x-hex each) */
   publicInputs: string[];
-  /** Groth16 proof (a, b, c) in Soroban byte format */
-  proof: {
-    a: string;  // 64 bytes hex
-    b: string;  // 128 bytes hex
-    c: string;  // 64 bytes hex
-  };
+  /** Public commitment = Pedersen(secret, nullifier, amount) */
+  commitment: string;
+  /** Publisher-bound nullifier hash = Pedersen(nullifier, pub_x, pub_y) */
+  nullifierHash: string;
 }
 
 export interface PaymentReceipt {
-  txHash: string;
+  /** Publisher-bound nullifier hash (double-spend tag) */
   nullifierHash: string;
+  /** Proof size in bytes (real UltraHonk proof) */
+  proofBytes: number;
+  /** Whether the proof verified */
+  verified: boolean;
   bearerToken: string;
   contentUrl: string;
 }
