@@ -71,28 +71,43 @@ pick a denomination (0.1 / 1 / 10 XLM)
 
 The deposit and the withdraw are two separate, unlinkable on-chain transactions.
 
+## Roles
+
+VeilGate has only three roles — and crucially, **no operator or custodian**:
+
+| Role | Who | What they do / see |
+|---|---|---|
+| **Reader (payer)** | the person paying | Connects Freighter, picks a denomination, deposits, generates the proof in their browser, and pays a publisher. Holds the note secret — it never leaves their device. |
+| **Publisher (recipient)** | who gets paid | Shares a `G…` address and receives XLM out of the pool. Only ever sees an address paying *from the pool contract* — never the reader's wallet. |
+| **Hermes (agent)** | optional assistant | An in-app chat agent. Drives the *same* on-chain operations (`/settle`, `/wallet`, `/history`, `/verify`) on the reader's behalf. Never touches keys or the note secret. |
+| ~~Operator / admin~~ | nobody | There is none. The contract recomputes the root itself; no one publishes roots or holds funds. |
+
 ## How you interact with it
 
 ```mermaid
 sequenceDiagram
-    actor Reader
-    participant Browser as Browser (VeilGate UI)
-    participant FW as Freighter
-    participant Pool as Pool contract (Soroban)
-    participant Pub as Publisher
+    actor Reader as Reader (payer)
+    participant Hermes as Hermes (agent)
+    participant App as VeilGate app
+    participant FW as Freighter wallet
+    participant Pool as Pool contract
+    actor Publisher as Publisher (recipient)
 
-    Reader->>Browser: pick denomination (0.1 / 1 / 10 XLM), enter publisher
-    Browser->>Browser: sample note (secret, nullifier); commitment = Poseidon(nullifier, secret)
-    Browser->>FW: sign deposit(commitment)
-    FW->>Pool: deposit — pulls XLM into the pool
-    Pool->>Pool: recompute Merkle root on-chain (native Poseidon)
-    Browser->>Pool: read deposit events, rebuild the tree
-    Browser->>Browser: Groth16 proof (snarkjs) — secret stays local
-    Browser->>FW: sign withdraw(proof, recipient)
+    Reader->>Hermes: ask to pay or use the UI directly
+    Hermes->>App: open the Pay flow
+    Reader->>App: choose a denomination and the publisher address
+    App->>App: create a one-time note and its commitment
+    App->>FW: request a signature for the deposit
+    FW->>Pool: deposit pulls XLM into the pool
+    Pool->>Pool: recompute the Merkle root on-chain with Poseidon
+    App->>Pool: read deposit events and rebuild the tree
+    App->>App: generate the Groth16 proof so the secret stays local
+    App->>FW: request a signature for the withdraw
     FW->>Pool: withdraw
-    Pool->>Pool: verify proof + check nullifier + bind recipient
-    Pool->>Pub: transfer the denomination (XLM)
-    Note over Reader,Pub: the deposit tx and the withdraw tx are unlinkable on-chain
+    Pool->>Pool: verify proof and check nullifier and bind recipient
+    Pool->>Publisher: pay the denomination in XLM
+    Pool-->>App: return both tx hashes for the Activity log
+    Note over Reader,Publisher: the deposit tx and the withdraw tx are unlinkable on-chain
 ```
 
 ## How to use it
@@ -160,26 +175,32 @@ re-withdraw same nullifier     -> Error #2 NullifierSpent  (double-spend blocked
 
 ```mermaid
 flowchart TB
-    subgraph Reader["Reader Browser"]
-        UI["Next.js 14 UI + Hermes agent"]
-        SJ["snarkjs (Groth16 proving)"]
-        FW["Freighter Wallet"]
+    Reader(["Reader — payer"])
+    Publisher(["Publisher — recipient"])
+
+    subgraph Browser["Reader's browser"]
+        UI["VeilGate app (Next.js 14)"]
+        HER["Hermes agent (chat)"]
+        SJ["snarkjs — Groth16 proving"]
+        FW["Freighter wallet"]
     end
 
-    subgraph Pool["Soroban shielded pool (per denomination)"]
+    subgraph Pool["Soroban shielded pool — one contract per denomination"]
         TREE["on-chain Merkle tree + root history"]
         POS["native Poseidon (crypto_hazmat)"]
         VER["inline Groth16/BN254 verify (host functions)"]
         NUL["nullifier set"]
     end
 
+    Reader --> UI
+    HER -.drives.-> UI
     UI -->|"1. note: Poseidon(nullifier, secret)"| SJ
     FW -->|"2. deposit(commitment)"| TREE
     TREE --> POS
     UI -->|"3. rebuild tree from events, Groth16 proof"| SJ
     FW -->|"4. withdraw(proof, recipient)"| VER
     VER --> NUL
-    VER -->|"pay denomination"| UI
+    VER -->|"5. pay denomination in XLM"| Publisher
 ```
 
 ---
@@ -222,13 +243,28 @@ cd contracts && cargo test -p pool          # 7 tests
 # Tree reconstruction: rebuild the tree for several leaf indices and prove each verifies.
 cd pool && npm install && npm test          # pathFor(1,0) / (2,1) / (5,3) -> proofs verify
 
-# App: API endpoints (challenge + x402 content), the Hermes agent, and lib helpers.
-cd app && npm install && npm test           # 19 tests (vitest)
+# App: API routes, the Hermes agent, lib helpers, and the transaction log.
+cd app && npm install && npm test           # 22 tests (vitest)
 ```
 
 ---
 
-## Build & run
+## Run the app
+
+The fastest path — the app already points at the deployed testnet pools, so you only need the
+frontend. You'll need [Freighter](https://www.freighter.app/) on Stellar **testnet**.
+
+```bash
+cd app
+npm install
+cp .env.example .env.local      # defaults already point at the live testnet pools
+npm run dev                     # http://localhost:3000
+```
+
+Then connect Freighter, open **Pay**, paste a publisher `G…` address, pick a denomination, and sign
+the two prompts. Or just use the hosted build: **https://veilgate.vercel.app**.
+
+### Rebuild the contracts + circuit from scratch (optional)
 
 ```bash
 # 1. circuit artifacts + a demo note/proof
@@ -238,11 +274,10 @@ PUBLISHER=G... node scripts/pool_demo.mjs        # writes /tmp/pool_demo.env
 # 2. build + deploy a pool (one per denomination)
 cd ../contracts && stellar contract build
 stellar contract deploy --wasm target/wasm32v1-none/release/pool.wasm --source <key> --network testnet -- \
-  --token <XLM SAC> --denom 1000000 \
+  --token CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC --denom 1000000 \
   --vk_alpha <hex> --vk_beta <hex> --vk_gamma <hex> --vk_delta <hex> --vk_ic '[<hex>,…]'
 
-# 3. run the app (full deposit -> prove -> pay with Freighter)
-cd ../app && npm install && cp .env.example .env.local && npm run dev
+# 3. point the app at your new pool ids (app/.env.local) and run it
 ```
 
 ---

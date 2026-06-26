@@ -7,6 +7,7 @@ import { DENOMINATIONS } from '@/lib/pool-config';
 import { Card, CopyButton, PrivacyBadge, ExplorerLink, TestnetPill, truncate } from '@/components/ui';
 import { TxLog } from '@/components/tx-log';
 import { UseCases } from '@/components/use-cases';
+import { VerifiedOnchain } from '@/components/verified-onchain';
 
 export function DashboardHome() {
   const { address } = useWallet();
@@ -69,9 +70,18 @@ export function DashboardHome() {
       </section>
 
       <section>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-veil-400">
+          Proof it works on-chain
+        </h2>
+        <div className="mt-3">
+          <VerifiedOnchain />
+        </div>
+      </section>
+
+      <section>
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-veil-400">
-            Recent payments
+            Your recent payments
           </h2>
           <Link href="/dashboard/history" className="text-xs text-veil-400 hover:underline">
             View all →
