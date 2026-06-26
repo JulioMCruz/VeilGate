@@ -5,90 +5,75 @@ verified independently against Horizon testnet.
 
 - Tester wallet: `GAS45G7S…56MX6BU5` (friendbot-funded).
 - Second destination (to rule out a pay-to-self artifact): `GDRA7SYF…W5O53U`.
+- Relayer account (for the #2 fix): `GDEJXO76…5HDOYD`.
 - The headline privacy finding (#2) has its own deep dive: [`UNLINKABILITY-PLAN.md`](./UNLINKABILITY-PLAN.md).
+
+Status legend: ✅ fixed · ↗ escalated · ⏳ pending.
 
 ---
 
 ## ✅ Working (happy path)
 
 Connect wallet · denominations 0.1/1/10 XLM + live anonymity-set indicator · **real 0.1 XLM
-payment** (deposit → in-browser Groth16 proof → on-chain withdraw) · full receipt · two
-Freighter signatures · on-chain verification · Activity log · Wallet · dashboard home ·
-Hermes (`/history`, `/verify`, `/settle`, graceful unknown command) · invalid address
-disables the pay button · disconnect → landing · wrong network blocked by Freighter.
+payment** (deposit → in-browser Groth16 proof → on-chain withdraw) · full receipt · on-chain
+verification · Activity log · Wallet · dashboard home · Hermes (`/settle`, `/wallet`,
+`/history`, `/verify`, graceful unknown command) · invalid address disables the pay button ·
+disconnect → landing · wrong network blocked by Freighter.
 
 ---
 
-## 🐛 Findings & fixes
+## 🐛 Findings & fixes (in order)
 
-Each finding lists severity, evidence/cause, and the planned fix (file:line where known).
+### #1 — [MEDIUM] ✅ "Open dashboard →" landed on a broken demo
+- **What:** after connecting, the "Open dashboard →" button (`app/app/connect/page.tsx:42`) did `router.push('/dashboard/pay')` — an out-of-nav demo that moved no value and was itself broken (see #5).
+- **Fix:** push to `/dashboard` (the real home).
 
-### #2 — [HIGH] ✅ Unlinkability is broken on-chain
-Deposit and withdraw are submitted by the **same account**, so payer→publisher is trivially linkable.
-- **Evidence (pay to a *different* account, rules out artifact):**
+### #2 — [HIGH] ✅ Unlinkability was broken on-chain (verified)
+The pool is supposed to hide *who paid whom*, but the deposit and the withdraw were submitted by the **same account**, so anyone could link payer → publisher.
+- **Evidence (pay to a *different* account, rules out a pay-to-self artifact):**
   - Deposit `5494e105…` → source `GAS45G7S`, seq …645
   - Withdraw `2ad32e9a…` → source `GAS45G7S` (same), seq …646, pays `GDRA7`
-- **Cause:** `app/lib/pool.ts` → `invoke(server, from, 'withdraw', …)` uses the depositor as tx source. The withdraw args don't include the depositor, so it doesn't actually need their signature.
-- **Fix:** route the withdraw through a relayer (different source account). Full plan, conditions, and on-chain acceptance criteria in **[`UNLINKABILITY-PLAN.md`](./UNLINKABILITY-PLAN.md)**.
+- **Cause:** `app/lib/pool.ts` → `invoke(server, from, 'withdraw', …)` used the depositor as the tx source. The withdraw args don't include the depositor, so it doesn't actually need their signature.
+- **Fix:** route the withdraw through a server-side relayer (different source account). Full plan, required conditions, trust model, and on-chain acceptance criteria in [`UNLINKABILITY-PLAN.md`](./UNLINKABILITY-PLAN.md).
 - **Status:** ✅ implemented + verified on-chain. After the fix, deposit `8607ec24…` source `GAS45G7S` (depositor) and withdraw `37bd4400…` source `GDEJXO76…` (relayer) — different accounts, no shared source. (A fully fresh-recipient end-to-end demo currently needs a pool unaffected by #10.)
 
-### #10 — [HIGH / architectural] Withdraw fails with `RootUnknown` once the pool's oldest deposit ages out
-The app rebuilds the Merkle tree by replaying `deposit` events from Soroban RPC, but RPC only
-retains events for a limited window. Once the earliest deposit (leaf 0) ages out, clients can
-no longer reconstruct the correct tree, so the computed root never matches the contract's
-`current_root` → `withdraw` panics with `Error(Contract, #1) = RootUnknown`. This breaks **all**
-withdrawals from any pool older than the retention window. Independent of #2 (the relayer).
+### #3 — [LOW] ✅ Wallet balance was shown rounded
+- **What:** Wallet showed "10,000" while the real balance was `9999.9854` (fees/movement hidden).
+- **Fix:** render the full balance with decimals in `app/app/dashboard/wallet/page.tsx`.
+
+### #4 — [MEDIUM] ✅ "Testnet" badge was hardcoded; wrong network not detected
+- **What:** the UI always showed "Testnet"; on Main Net it only failed at signing time (Freighter caught it, not the app). `network` was hardcoded in `app/lib/wallet.ts`.
+- **Fix:** read Freighter's actual network (`getNetwork`); the wallet provider exposes it and the Pay screen warns + disables when the wallet isn't on Test Net.
+
+### #5 — [MEDIUM] ✅ Demo `/dashboard/pay` failed to generate a proof
+- **What:** `/dashboard/pay` → "Something went wrong. The proof could not be generated." It used `@aztec/bb.js` (UltraHonk), whose WASM failed to init — a legacy stack predating the snarkjs/Groth16 pool flow.
+- **Fix:** removed the page, its `pay-flow` component, the bb.js code in `lib/proof.ts`, and the Hermes `/pay` command. The real flow is unaffected.
+
+### #6 — [MEDIUM] ✅ Demo `/dashboard/shield` crashed
+- **What:** `/dashboard/shield` → "Object.defineProperty called on non-object" — same bb.js init failure as #5.
+- **Fix:** removed the page and the Hermes `/shield` command (same change as #5).
+
+### #7 — [LOW] ✅ Hermes `/history` showed an empty publisher field
+- **What:** `app/components/hermes.tsx:108` rendered `domainOf(r.contentUrl)`, but the pool flow stores the destination in `publisherDomain` (`contentUrl` is empty) — leftover from the "pay a URL" → pool pivot.
+- **Fix:** render `r.publisherDomain`.
+
+### #8 — [HIGH] ✅ No check that the destination exists
+- **What:** paying < 1 XLM to a non-existent account failed the withdraw with a raw `HostError #14` (`"transfer amount is below minimum balance for new account"`). Stellar needs ≥ 1 XLM to create an account, and the deposit had already executed (see #9).
+- **Fix:** pre-flight the recipient in `app/lib/pool.ts` before depositing; if it doesn't exist and the denomination is under the 1 XLM minimum, fail early with a clear message. (Production option: create new accounts via Sponsored Reserves through the relayer.)
+
+### #9 — [HIGH / fund safety] ✅ A failed withdraw stranded the deposit
+- **What:** the flow deposits first, withdraws second; a failure/abandon between them locked the deposit in the pool and the in-memory note (secret) was lost on navigation → unrecoverable funds (tester balance dropped ~0.208 XLM across stuck attempts).
+- **Fix:** persist the note locally **before** depositing (`app/lib/pending.ts`) and clear it on a successful withdraw; the Pay screen lists pending deposits with a "Retry payout" that re-proves and pays via the relayer with no new deposit (`app/components/pending-withdraws.tsx`, `retryWithdraw` in `lib/pool.ts`).
+
+### #10 — [HIGH / architectural] ↗ Withdraw fails with `RootUnknown` once the oldest deposit ages out
+- **What:** the app rebuilds the Merkle tree by replaying `deposit` events from Soroban RPC, but RPC only retains events for a limited window. Once the earliest deposit (leaf 0) ages out, clients can no longer reconstruct the correct tree, so the computed root never matches the contract's `current_root` → `withdraw` panics with `Error(Contract, #1) = RootUnknown`. This breaks **all** withdrawals from any pool older than the retention window. Independent of #2.
 - **Evidence:** visible deposit events are indices 1..9 (index 0 aged out; wider RPC windows return empty). The failed withdraw sent root `0a59d8…` (the browser's gap-filled reconstruction); the contract's real `current_root` is `268d1b…`; neither a gap-filled nor a packed reconstruction matches → leaf 0 is genuinely unrecoverable from events.
-- **Fix (architectural — likely contract-side):** stop depending on RPC event retention. Options: (a) the pool stores commitments in persistent storage and exposes a getter so clients can always fetch the full leaf set; (b) a persistent indexer/backend that records every deposit and serves the leaves; (c) at minimum, deploy fresh pools for demos and withdraw within the retention window.
-
-### #8 — [HIGH] No check that the destination exists
-Paying < 1 XLM to a non-existent account fails the withdraw with a raw `HostError #14`
-(`"transfer amount is below minimum balance for new account", 1000000, 10000000`). Stellar
-needs ≥ 1 XLM to create an account.
-- **Fix:** in `app/lib/pool.ts` / `app/components/settle-flow.tsx`, pre-check `server.getAccount(publisher)`; if 404 and the denomination can't create the account, block with a clear message. Production: create new accounts via Sponsored Reserves (CAP-33) through the relayer.
-
-### #9 — [HIGH / fund safety] A failed withdraw strands the deposit
-The flow deposits first, withdraws second; a failure/abandon between them locks 0.1 XLM in
-the pool and the in-memory note is lost on navigation (tester balance dropped ~0.208 XLM).
-- **Fix:** persist the note to storage **before** depositing; pre-flight withdraw preconditions; add a "pending deposits / retry withdraw" surface.
-
-### #1 — [MEDIUM] "Open dashboard →" lands on a broken demo
-`app/app/connect/page.tsx:42` does `router.push('/dashboard/pay')` — an out-of-nav, broken demo (see #5).
-- **Fix:** push to `/dashboard` (or `/dashboard/settle`). *(one line)*
-
-### #4 — [MEDIUM] "Testnet" badge is hardcoded; wrong network not detected
-The UI always shows "Testnet"; on Main Net it only fails at signing time (Freighter catches it, not the app).
-- **Fix:** read Freighter's network (`getNetworkDetails()`); show the real network and disable/warn on mismatch.
-
-### #5 + #6 — [MEDIUM] Broken bb.js demo pages
-`/dashboard/pay` ("proof could not be generated") and `/dashboard/shield`
-("Object.defineProperty called on non-object") use `@aztec/bb.js` (legacy UltraHonk), whose
-WASM fails to init. They predate the snarkjs/Groth16 pool pivot, move no value, are out of nav.
-- **Fix (recommended):** remove the demos + their bb.js code (`app/app/dashboard/pay`, `app/app/dashboard/shield`, `app/components/pay-flow.tsx`, the bb.js path in `app/lib/proof.ts`). Shrinks dead code and risk surface.
-
-### #3 — [LOW] Wallet balance shown rounded
-Shows "10,000" while the real balance is `9999.9854` (fees + payment movement hidden).
-- **Fix:** render full decimals in `app/app/dashboard/wallet/page.tsx`.
-
-### #7 — [LOW] Hermes `/history` empty publisher field
-`app/components/hermes.tsx:108` renders `domainOf(r.contentUrl)` but the pool flow stores the
-destination in `publisherDomain` (`contentUrl` is empty).
-- **Fix:** render `r.publisherDomain`. *(one line)*
+- **Fix (architectural — contract-side):** stop depending on RPC event retention. Options: (a) the pool stores commitments in persistent storage and exposes a getter so clients can always fetch the full leaf set; (b) a persistent indexer that records every deposit and serves the leaves; (c) for demos, deploy fresh pools and withdraw within the retention window.
+- **Status:** ↗ escalated to the contract side; cannot be fixed from the app alone.
 
 ---
 
-## Implementation status (branch `fix/unlinkable-withdraw-relayer`)
-- ✅ **#2** — relayer-submitted withdraw (verified on-chain).
-- ✅ **#1** — connect redirect goes to `/dashboard`.
-- ✅ **#7** — Hermes `/history` shows `publisherDomain`.
-- ✅ **#3** — wallet balance shows full decimals.
-- ✅ **#4** — wallet network detected; settle screen gates wrong network.
-- ✅ **#5/#6** — broken bb.js demo pages removed.
-- ✅ **#8** — payment to a non-existent account below 1 XLM is blocked before depositing.
-- ⏳ **#9** — note persistence + retry UI for stranded deposits (larger; folds into the relayer/contract redesign).
-- ↗ **#10** — architectural (event-retention); escalated to the contract side.
-
 ## Pending QA
-- Reject the 2nd (withdraw) signature mid-flow — does the UI recover? (relates to #9; note: with the relayer, the user only signs the deposit now)
+- Reject the withdraw mid-flow — does the UI recover? (with the relayer, the user now signs only the deposit; relevant to the #9 retry path).
 - Double-spend (nullifier) — needs a separate technical test.
 - `npm test` (22 Vitest) — currently green; `npm run build` baseline.
