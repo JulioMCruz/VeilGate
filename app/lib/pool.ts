@@ -105,15 +105,28 @@ function pathFor(leaves: bigint[], index: number): {
  */
 async function fetchCommitments(server: rpc.Server, poolId: string): Promise<bigint[]> {
   const latest = await server.getLatestLedger();
-  let start = Math.max(1, latest.sequence - 16000);
+  // The Soroban RPC only retains events for a limited window; a startLedger
+  // older than that returns nothing (or errors), so stay inside it. ~9000 ledgers
+  // (~12h) is comfortably within testnet retention and covers a demo pool.
+  let windowBack = 9000;
+  let start = Math.max(1, latest.sequence - windowBack);
   const byIndex = new Map<number, bigint>();
   const seen = new Set<string>();
   for (let page = 0; page < 50; page++) {
-    const res = await server.getEvents({
-      startLedger: start,
-      filters: [{ type: 'contract', contractIds: [poolId] }],
-      limit: 200,
-    });
+    let res;
+    try {
+      res = await server.getEvents({
+        startLedger: start,
+        filters: [{ type: 'contract', contractIds: [poolId] }],
+        limit: 200,
+      });
+    } catch {
+      // startLedger fell outside retention — narrow the window and retry.
+      windowBack = Math.floor(windowBack / 2);
+      if (windowBack < 500) break;
+      start = Math.max(1, latest.sequence - windowBack);
+      continue;
+    }
     const evs = res.events ?? [];
     let fresh = 0;
     for (const ev of evs) {
