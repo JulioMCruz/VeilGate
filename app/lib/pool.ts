@@ -264,6 +264,24 @@ export async function payPrivately(
   const recipientField = await recipientFieldFor(publisher);
   const nullifierHash = poseidon1([note.nullifier]);
 
+  // #8 pre-flight: a payout to a brand-new account must be at least the 1 XLM
+  // account-creation minimum, otherwise the on-chain transfer fails AFTER the
+  // deposit already executed (stranding funds). Check before depositing.
+  const ACCOUNT_MIN_STROOPS = 10_000_000; // 1 XLM base reserve
+  let recipientExists = true;
+  try {
+    await server.getAccount(publisher);
+  } catch {
+    recipientExists = false;
+  }
+  if (!recipientExists && denom.stroops < ACCOUNT_MIN_STROOPS) {
+    throw new Error(
+      `The recipient account doesn't exist on-chain yet, and ${denom.label} can't create it ` +
+        `(Stellar needs at least 1 XLM to open a new account). Fund the recipient first, ` +
+        `or use the 1 or 10 XLM denomination.`
+    );
+  }
+
   // 1. deposit (commitment) — contract recomputes the root on-chain
   onStage?.('depositing');
   const commitmentHex = be32hex(note.commitment);
