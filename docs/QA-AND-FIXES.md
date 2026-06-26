@@ -54,7 +54,7 @@ The UI always shows "Testnet"; on Main Net it only fails at signing time (Freigh
 `/dashboard/pay` ("proof could not be generated") and `/dashboard/shield`
 ("Object.defineProperty called on non-object") use `@aztec/bb.js` (legacy UltraHonk), whose
 WASM fails to init. They predate the snarkjs/Groth16 pool pivot, move no value, are out of nav.
-- **Fix (recommended):** remove the demos + their bb.js code (`app/app/dashboard/pay`, `app/app/dashboard/shield`, `app/components/pay-flow.tsx`, the bb.js path in `app/lib/proof.ts`). Shrinks dead code and judge-facing risk.
+- **Fix (recommended):** remove the demos + their bb.js code (`app/app/dashboard/pay`, `app/app/dashboard/shield`, `app/components/pay-flow.tsx`, the bb.js path in `app/lib/proof.ts`). Shrinks dead code and risk surface.
 
 ### #3 — [LOW] Wallet balance shown rounded
 Shows "10,000" while the real balance is `9999.9854` (fees + payment movement hidden).

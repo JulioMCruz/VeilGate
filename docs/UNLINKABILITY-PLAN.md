@@ -95,8 +95,8 @@ A fix is accepted only when, verified on Horizon:
 - Funded relayer account on testnet + server-side env var: minutes.
 - Anonymity-set gate + optional delay (timing mitigation): incremental.
 
-## 10. Decision needed (Julio)
+## 10. Open decisions
 
-1. Approve fixing #2 via **Option B (own relayer)** for the demo, with **Option A** as the production path?
+1. Fix #2 via **Option B (own relayer)** for now, with **Option A** as the production path?
 2. Any constraints on running a relayer account (funding, hosting)?
-3. If approved → branch `fix/unlinkable-withdraw-relayer` + PR. If not → leave it to Julio's agents.
+3. Lands on branch `fix/unlinkable-withdraw-relayer` → PR for review before any merge.

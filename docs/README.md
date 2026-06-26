@@ -1,6 +1,6 @@
 # VeilGate — QA & Unlinkability Fix
 
-> ## 🔎 TL;DR for judges & reviewers
+> ## 🔎 TL;DR
 > We stress-tested VeilGate's **core privacy claim directly on-chain — and it leaks.**
 > The deposit and the withdraw are submitted by the **same Stellar account**, so anyone can
 > link **payer → publisher** in seconds (verified on Horizon with two independent payments,
