@@ -45,13 +45,13 @@ The pool is supposed to hide *who paid whom*, but the deposit and the withdraw w
 - **What:** the UI always showed "Testnet"; on Main Net it only failed at signing time (Freighter caught it, not the app). `network` was hardcoded in `app/lib/wallet.ts`.
 - **Fix:** read Freighter's actual network (`getNetwork`); the wallet provider exposes it and the Pay screen warns + disables when the wallet isn't on Test Net.
 
-### #5 — [MEDIUM] ✅ Demo `/dashboard/pay` failed to generate a proof
-- **What:** `/dashboard/pay` → "Something went wrong. The proof could not be generated." It used `@aztec/bb.js` (UltraHonk), whose WASM failed to init — a legacy stack predating the snarkjs/Groth16 pool flow.
-- **Fix:** removed the page, its `pay-flow` component, the bb.js code in `lib/proof.ts`, and the Hermes `/pay` command. The real flow is unaffected.
+### #5 — [MEDIUM] ⏳ Demo `/dashboard/pay` fails to generate a proof (left as-is, unsurfaced)
+- **What:** `/dashboard/pay` → "Something went wrong. The proof could not be generated." It uses `@aztec/bb.js` (UltraHonk), whose WASM fails to init — a legacy stack predating the snarkjs/Groth16 pool flow.
+- **Decision:** the demo page isn't part of the real flow and isn't ours to delete. It's left in place but kept **unsurfaced**: out of nav, not in Hermes's documented commands (`/settle /wallet /history /verify` — the undocumented `/pay` navigation was dropped), and connect now lands on `/dashboard` (#1). The broken demo is no longer reachable from the app UI. Fixing the bb.js stack is out of scope (only ensure what's surfaced works).
 
-### #6 — [MEDIUM] ✅ Demo `/dashboard/shield` crashed
+### #6 — [MEDIUM] ⏳ Demo `/dashboard/shield` crashes (left as-is, unsurfaced)
 - **What:** `/dashboard/shield` → "Object.defineProperty called on non-object" — same bb.js init failure as #5.
-- **Fix:** removed the page and the Hermes `/shield` command (same change as #5).
+- **Decision:** same as #5 — left in place, kept unsurfaced (the undocumented Hermes `/shield` navigation was dropped).
 
 ### #7 — [LOW] ✅ Hermes `/history` showed an empty publisher field
 - **What:** `app/components/hermes.tsx:108` rendered `domainOf(r.contentUrl)`, but the pool flow stores the destination in `publisherDomain` (`contentUrl` is empty) — leftover from the "pay a URL" → pool pivot.

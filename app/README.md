@@ -69,6 +69,10 @@ The nav surfaces only the real settlement flow: **Home** (`/dashboard`),
 **Pay** (`/dashboard/settle`), **Activity** (`/dashboard/history`), and
 **Wallet** (`/dashboard/wallet`).
 
+`/dashboard/pay` and `/dashboard/shield` are **in-browser proving demos** that
+move **no value** and submit **no on-chain transaction** — they are intentionally
+kept out of the nav.
+
 ## Verifying on-chain (for judges)
 
 Every payment is auditable on **stellar.expert (testnet)**, and every link in the
