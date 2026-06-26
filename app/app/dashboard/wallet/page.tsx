@@ -52,7 +52,7 @@ export default function WalletPage() {
             {balances.map((b) => (
               <div key={b.asset} className="flex items-center justify-between text-sm">
                 <span className="text-gray-300">{b.asset}</span>
-                <span className="mono text-gray-100">{Number(b.amount).toLocaleString()}</span>
+                <span className="mono text-gray-100">{Number(b.amount).toLocaleString(undefined, { maximumFractionDigits: 7 })}</span>
               </div>
             ))}
           </div>

@@ -11,8 +11,20 @@ import {
   isConnected,
   requestAccess,
   signTransaction,
+  getNetwork,
 } from '@stellar/freighter-api';
 import type { WalletAddress } from './types';
+
+/** Best-effort read of the wallet's currently selected network (e.g. 'TESTNET'). */
+export async function getWalletNetwork(): Promise<string | null> {
+  try {
+    const net = await getNetwork();
+    if (net.error || !net.network) return null;
+    return net.network;
+  } catch {
+    return null;
+  }
+}
 
 /** Extract a readable message from a FreighterApiError (object) or string. */
 function errMsg(error: unknown, fallback: string): string {
@@ -44,7 +56,7 @@ export async function connectWallet(): Promise<WalletAddress> {
 
   return {
     address: access.address,
-    network: 'TESTNET', // Stellar Hacks demo runs on testnet
+    network: (await getWalletNetwork()) ?? 'UNKNOWN',
   };
 }
 

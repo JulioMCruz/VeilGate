@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { connectWallet } from '@/lib/wallet';
+import { connectWallet, getWalletNetwork } from '@/lib/wallet';
 
 export interface Balance {
   asset: string;
@@ -20,6 +20,8 @@ interface WalletState {
   isConnected: boolean;
   isConnecting: boolean;
   error: string | null;
+  /** Wallet's selected network, e.g. 'TESTNET' | 'PUBLIC' | 'UNKNOWN'. null until known. */
+  network: string | null;
   balances: Balance[];
   balancesLoading: boolean;
   connect: () => Promise<void>;
@@ -54,12 +56,28 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [balances, setBalances] = useState<Balance[]>([]);
   const [balancesLoading, setBalancesLoading] = useState(false);
+  const [network, setNetwork] = useState<string | null>(null);
 
   // Restore a previous session (address only — never keys).
   useEffect(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
     if (saved) setAddress(saved);
   }, []);
+
+  // Reflect the wallet's actual network whenever connected (incl. restored sessions).
+  useEffect(() => {
+    if (!address) {
+      setNetwork(null);
+      return;
+    }
+    let active = true;
+    getWalletNetwork().then((n) => {
+      if (active) setNetwork(n);
+    });
+    return () => {
+      active = false;
+    };
+  }, [address]);
 
   // Load balances whenever the address changes.
   useEffect(() => {
@@ -98,6 +116,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const disconnect = useCallback(() => {
     setAddress(null);
     setBalances([]);
+    setNetwork(null);
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
@@ -108,6 +127,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         isConnected: !!address,
         isConnecting,
         error,
+        network,
         balances,
         balancesLoading,
         connect,

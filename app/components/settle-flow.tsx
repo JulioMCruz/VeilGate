@@ -44,7 +44,8 @@ interface Receipt {
 }
 
 export function SettleFlow() {
-  const { address } = useWallet();
+  const { address, network } = useWallet();
+  const wrongNetwork = !!network && network !== 'TESTNET';
   const [publisher, setPublisher] = useState('');
   const [denom, setDenom] = useState<Denomination>(DEFAULT_DENOMINATION);
   const [stage, setStage] = useState<Stage>('idle');
@@ -261,9 +262,15 @@ export function SettleFlow() {
           </div>
           <Row k="Network" v="Stellar Testnet" />
         </dl>
+        {wrongNetwork && (
+          <p className="mt-4 rounded-lg border border-amber-500/40 bg-amber-950/30 px-3 py-2 text-sm text-amber-300">
+            Your wallet is on <span className="mono">{network}</span>. Switch Freighter to
+            <span className="mono"> Test Net</span> to make a payment.
+          </p>
+        )}
         <button
           onClick={pay}
-          disabled={!publisherValid}
+          disabled={!publisherValid || wrongNetwork}
           className="mt-5 w-full rounded-xl bg-veil-600 px-6 py-3 font-medium text-white hover:bg-veil-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Deposit &amp; pay privately
