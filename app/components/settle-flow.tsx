@@ -6,6 +6,7 @@ import { payPrivately, countDeposits } from '@/lib/pool';
 import { addReceipt } from '@/lib/history';
 import { DENOMINATIONS, DEFAULT_DENOMINATION, type Denomination } from '@/lib/pool-config';
 import { Card, CopyButton, PrivacyBadge, ExplorerLink, truncate } from '@/components/ui';
+import { PendingWithdraws } from '@/components/pending-withdraws';
 
 type Stage = 'idle' | 'depositing' | 'proving' | 'paying' | 'done' | 'error';
 
@@ -44,7 +45,8 @@ interface Receipt {
 }
 
 export function SettleFlow() {
-  const { address } = useWallet();
+  const { address, network } = useWallet();
+  const wrongNetwork = !!network && network !== 'TESTNET';
   const [publisher, setPublisher] = useState('');
   const [denom, setDenom] = useState<Denomination>(DEFAULT_DENOMINATION);
   const [stage, setStage] = useState<Stage>('idle');
@@ -206,6 +208,7 @@ export function SettleFlow() {
 
   return (
     <div className="mx-auto max-w-xl">
+      <PendingWithdraws />
       <h1 className="text-2xl font-bold">Pay a publisher — real settlement</h1>
       <p className="mt-1 text-sm text-gray-400">
         A real {denom.label} payment on Stellar testnet, routed through the shielded pool. Your
@@ -261,15 +264,22 @@ export function SettleFlow() {
           </div>
           <Row k="Network" v="Stellar Testnet" />
         </dl>
+        {wrongNetwork && (
+          <p className="mt-4 rounded-lg border border-amber-500/40 bg-amber-950/30 px-3 py-2 text-sm text-amber-300">
+            Your wallet is on <span className="mono">{network}</span>. Switch Freighter to
+            <span className="mono"> Test Net</span> to make a payment.
+          </p>
+        )}
         <button
           onClick={pay}
-          disabled={!publisherValid}
+          disabled={!publisherValid || wrongNetwork}
           className="mt-5 w-full rounded-xl bg-veil-600 px-6 py-3 font-medium text-white hover:bg-veil-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Deposit &amp; pay privately
         </button>
         <p className="mt-2 text-center text-[11px] text-gray-500">
-          You&apos;ll sign two transactions in Freighter (deposit + withdraw).
+          You&apos;ll sign one transaction in Freighter (the deposit). The payout is
+          submitted by a relayer, so it can&apos;t be linked to you on-chain.
         </p>
       </Card>
 

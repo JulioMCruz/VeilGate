@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
+import { useWallet } from '@/lib/providers/wallet-provider';
 
 /** Truncate a hex/address string in the middle. */
 export function truncate(s: string, head = 6, tail = 4): string {
@@ -60,6 +61,46 @@ export function TestnetPill() {
       className="rounded-full border border-amber-400/60 bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
     >
       ● Testnet
+    </span>
+  );
+}
+
+/**
+ * Pill that reflects the connected wallet's ACTUAL network (#4). Amber when on
+ * (or defaulting to) Test Net; red when the wallet is on a different network so
+ * the mismatch is obvious right next to the address.
+ */
+export function NetworkPill() {
+  const { network, isConnected } = useWallet();
+  const onTestnet = !isConnected || !network || network === 'TESTNET';
+  const label = !isConnected
+    ? 'Testnet'
+    : network === 'TESTNET'
+      ? 'Testnet'
+      : network === 'PUBLIC'
+        ? 'Main Net'
+        : network ?? 'Unknown';
+
+  if (onTestnet) {
+    return (
+      <span
+        role="status"
+        aria-label="Wallet on Stellar Testnet"
+        title="On Stellar Testnet. Tokens here have no real value; contracts are not audited."
+        className="rounded-full border border-amber-400/60 bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+      >
+        ● {label}
+      </span>
+    );
+  }
+  return (
+    <span
+      role="status"
+      aria-label={`Wallet on ${label} — switch Freighter to Test Net`}
+      title="Your wallet is not on Test Net. Switch Freighter to Test Net to use VeilGate."
+      className="rounded-full border border-red-500/60 bg-red-50 px-2.5 py-0.5 text-[11px] font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300"
+    >
+      ● {label}
     </span>
   );
 }

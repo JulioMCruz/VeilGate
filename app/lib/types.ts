@@ -4,7 +4,8 @@
 
 export interface WalletAddress {
   address: string;
-  network: 'TESTNET' | 'PUBLIC';
+  /** Freighter's selected network, e.g. 'TESTNET' | 'PUBLIC' | 'FUTURENET' | 'UNKNOWN'. */
+  network: string;
 }
 
 export interface PaywallRequest {

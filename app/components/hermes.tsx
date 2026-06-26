@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { useWallet } from '@/lib/providers/wallet-provider';
-import { loadHistory, domainOf } from '@/lib/history';
+import { loadHistory } from '@/lib/history';
 import { truncate } from '@/components/ui';
 
 interface HermesCtx {
@@ -105,30 +105,12 @@ export function HermesDrawer() {
             ? `Last ${Math.min(h.length, 5)} payments (the link to your deposit stays private):\n` +
                 h
                   .slice(0, 5)
-                  .map((r) => `• ${domainOf(r.contentUrl)} · ${r.nullifier.slice(0, 12)}… · deposit↔payment: unlinkable`)
+                  .map((r) => `• ${r.publisherDomain} · ${r.nullifier.slice(0, 12)}… · deposit↔payment: unlinkable`)
                   .join('\n')
             : 'No payments yet. Use /settle to make your first private payment.'
         );
         break;
       }
-      case '/pay':
-        if (!arg) {
-          reply('Usage: /pay <url> — give me the article URL to unlock.');
-        } else {
-          reply(`Opening the private pay flow for ${domainOf(arg)}. Choose your amount and I’ll generate the proof.`);
-          setTimeout(() => {
-            close();
-            router.push(`/dashboard/pay?url=${encodeURIComponent(arg)}`);
-          }, 700);
-        }
-        break;
-      case '/shield':
-        reply('Shielding pre-mints a payment commitment to use later. Opening Shield…');
-        setTimeout(() => {
-          close();
-          router.push('/dashboard/shield');
-        }, 700);
-        break;
       case '/verify':
         reply(
           arg

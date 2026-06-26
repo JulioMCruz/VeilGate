@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useWallet } from '@/lib/providers/wallet-provider';
-import { Card, CopyButton, TestnetPill } from '@/components/ui';
+import { Card, CopyButton, NetworkPill } from '@/components/ui';
 
 export default function WalletPage() {
   const router = useRouter();
@@ -20,7 +20,7 @@ export default function WalletPage() {
       <Card className="mt-6">
         <div className="flex items-center justify-between">
           <span className="text-sm text-gray-400">Network</span>
-          <TestnetPill />
+          <NetworkPill />
         </div>
         <div className="mt-3 flex items-center justify-between gap-2">
           <span className="text-sm text-gray-400">Address</span>
@@ -52,7 +52,7 @@ export default function WalletPage() {
             {balances.map((b) => (
               <div key={b.asset} className="flex items-center justify-between text-sm">
                 <span className="text-gray-300">{b.asset}</span>
-                <span className="mono text-gray-100">{Number(b.amount).toLocaleString()}</span>
+                <span className="mono text-gray-100">{Number(b.amount).toLocaleString(undefined, { maximumFractionDigits: 7 })}</span>
               </div>
             ))}
           </div>
