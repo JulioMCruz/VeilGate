@@ -65,17 +65,26 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Reflect the wallet's actual network whenever connected (incl. restored sessions).
+  // Freighter can switch networks without a reconnect, so keep it live: poll and
+  // re-check on focus instead of reading it only once.
   useEffect(() => {
     if (!address) {
       setNetwork(null);
       return;
     }
     let active = true;
-    getWalletNetwork().then((n) => {
-      if (active) setNetwork(n);
-    });
+    const check = () =>
+      getWalletNetwork().then((n) => {
+        if (active) setNetwork(n);
+      });
+    check();
+    const id = setInterval(check, 2500);
+    const onFocus = () => check();
+    window.addEventListener('focus', onFocus);
     return () => {
       active = false;
+      clearInterval(id);
+      window.removeEventListener('focus', onFocus);
     };
   }, [address]);
 
