@@ -30,6 +30,16 @@ Deposit and withdraw are submitted by the **same account**, so payer→publisher
   - Withdraw `2ad32e9a…` → source `GAS45G7S` (same), seq …646, pays `GDRA7`
 - **Cause:** `app/lib/pool.ts` → `invoke(server, from, 'withdraw', …)` uses the depositor as tx source. The withdraw args don't include the depositor, so it doesn't actually need their signature.
 - **Fix:** route the withdraw through a relayer (different source account). Full plan, conditions, and on-chain acceptance criteria in **[`UNLINKABILITY-PLAN.md`](./UNLINKABILITY-PLAN.md)**.
+- **Status:** ✅ implemented + verified on-chain. After the fix, deposit `8607ec24…` source `GAS45G7S` (depositor) and withdraw `37bd4400…` source `GDEJXO76…` (relayer) — different accounts, no shared source. (A fully fresh-recipient end-to-end demo currently needs a pool unaffected by #10.)
+
+### #10 — [HIGH / architectural] Withdraw fails with `RootUnknown` once the pool's oldest deposit ages out
+The app rebuilds the Merkle tree by replaying `deposit` events from Soroban RPC, but RPC only
+retains events for a limited window. Once the earliest deposit (leaf 0) ages out, clients can
+no longer reconstruct the correct tree, so the computed root never matches the contract's
+`current_root` → `withdraw` panics with `Error(Contract, #1) = RootUnknown`. This breaks **all**
+withdrawals from any pool older than the retention window. Independent of #2 (the relayer).
+- **Evidence:** visible deposit events are indices 1..9 (index 0 aged out; wider RPC windows return empty). The failed withdraw sent root `0a59d8…` (the browser's gap-filled reconstruction); the contract's real `current_root` is `268d1b…`; neither a gap-filled nor a packed reconstruction matches → leaf 0 is genuinely unrecoverable from events.
+- **Fix (architectural — likely contract-side):** stop depending on RPC event retention. Options: (a) the pool stores commitments in persistent storage and exposes a getter so clients can always fetch the full leaf set; (b) a persistent indexer/backend that records every deposit and serves the leaves; (c) at minimum, deploy fresh pools for demos and withdraw within the retention window.
 
 ### #8 — [HIGH] No check that the destination exists
 Paying < 1 XLM to a non-existent account fails the withdraw with a raw `HostError #14`
