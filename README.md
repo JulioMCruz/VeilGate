@@ -7,7 +7,30 @@ on Stellar. Real value moves on testnet, but the link between *your deposit* and
 the publisher receives* is broken — an on-chain observer cannot tell which deposit paid which
 publisher, and the publisher never learns your wallet identity.
 
-Built for the **Stellar Hacks: Real-World ZK** hackathon.
+Built for the **Stellar Hacks: Real-World ZK** hackathon. Live: **https://veilgate.vercel.app**
+
+---
+
+## The problem
+
+Paying for something on a public blockchain is the opposite of private: anyone can see who paid
+whom, how much, and when. For micropayments — tipping a writer, unlocking an article, paying a
+contributor — that permanently links your wallet (your identity) to everything you buy and read.
+Card rails are no better: the processor and the publisher see your identity and full history.
+
+So today you must choose between *paying privately* and *paying verifiably on-chain*. VeilGate
+removes that choice.
+
+## The solution
+
+A **shielded pool**. You deposit a fixed amount; later, an unrelated withdrawal pays the publisher
+out of the pool. A zero-knowledge proof convinces the contract that the withdrawal corresponds to
+*some* earlier deposit — without revealing *which* one. The payment is real, on-chain, and
+verifiable; the link between you and the publisher is not.
+
+What makes it **trustless**: the pool contract recomputes its Merkle root **on-chain** with the
+native Poseidon hash (no operator publishing roots), binds each proof to its recipient (no
+front-running), and records nullifiers (no double-spend). All of it verified on Stellar testnet.
 
 ---
 
@@ -47,6 +70,48 @@ pick a denomination (0.1 / 1 / 10 XLM)
 ```
 
 The deposit and the withdraw are two separate, unlinkable on-chain transactions.
+
+## How you interact with it
+
+```mermaid
+sequenceDiagram
+    actor Reader
+    participant Browser as Browser (VeilGate UI)
+    participant FW as Freighter
+    participant Pool as Pool contract (Soroban)
+    participant Pub as Publisher
+
+    Reader->>Browser: pick denomination (0.1 / 1 / 10 XLM), enter publisher
+    Browser->>Browser: sample note (secret, nullifier); commitment = Poseidon(nullifier, secret)
+    Browser->>FW: sign deposit(commitment)
+    FW->>Pool: deposit — pulls XLM into the pool
+    Pool->>Pool: recompute Merkle root on-chain (native Poseidon)
+    Browser->>Pool: read deposit events, rebuild the tree
+    Browser->>Browser: Groth16 proof (snarkjs) — secret stays local
+    Browser->>FW: sign withdraw(proof, recipient)
+    FW->>Pool: withdraw
+    Pool->>Pool: verify proof + check nullifier + bind recipient
+    Pool->>Pub: transfer the denomination (XLM)
+    Note over Reader,Pub: the deposit tx and the withdraw tx are unlinkable on-chain
+```
+
+## How to use it
+
+1. Open **https://veilgate.vercel.app** and connect **Freighter** (Stellar **testnet**). Fund the
+   account from the testnet faucet if needed.
+2. Go to **Pay**, paste a publisher's `G…` address, and pick a denomination (0.1 / 1 / 10 XLM).
+3. Sign the two transactions Freighter prompts (deposit, then withdraw). The proof is generated
+   locally in your browser — the note secret never leaves the tab.
+4. Open **Activity** for the receipt: both transaction hashes (clickable to stellar.expert), the
+   proof-verified badge, the nullifier, and the root the contract matched.
+
+## Tokens
+
+The shielded pool settles in **native XLM** on Stellar **testnet** — the deposit pulls XLM in and
+the withdrawal pays the publisher XLM. That is the only token in the real flow.
+
+> A separate x402 content endpoint (`app/api/content`, `agent/x402`) references **USDC** — it is a
+> demo scaffold, not part of the judged settlement, and moves no value.
 
 ---
 

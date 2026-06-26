@@ -6,13 +6,14 @@ import { useWallet } from '@/lib/providers/wallet-provider';
 import { useHermes } from '@/components/hermes';
 import { TestnetPill, CopyButton, truncate } from '@/components/ui';
 
+// Only the real, on-chain XLM settlement flow is surfaced. The earlier
+// content-unlock / shield routes are proving demos that move no value, so they
+// are kept out of the nav to avoid any confusion for evaluators.
 const NAV = [
   { href: '/dashboard', label: 'Home', icon: '⌂' },
   { href: '/dashboard/settle', label: 'Pay', icon: '⇄' },
   { href: '/dashboard/history', label: 'Activity', icon: '⊞' },
   { href: '/dashboard/wallet', label: 'Wallet', icon: '⬡' },
-  { href: '/dashboard/pay', label: 'Unlock', icon: '◈' },
-  { href: '/dashboard/shield', label: 'Shield', icon: '🛡' },
 ];
 
 export function TopBar() {

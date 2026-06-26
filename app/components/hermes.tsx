@@ -48,7 +48,7 @@ interface Msg {
   text: string;
 }
 
-const COMMANDS = ['/settle', '/pay', '/wallet', '/history', '/shield', '/verify'];
+const COMMANDS = ['/settle', '/wallet', '/history', '/verify'];
 
 export function HermesDrawer() {
   const { isOpen, close } = useHermes();
@@ -58,7 +58,7 @@ export function HermesDrawer() {
     {
       from: 'hermes',
       text:
-        'Hey — I’m Hermes, your VeilGate agent. /settle sends XLM through the shielded pool (real Stellar Testnet) — your deposit and the payment to the publisher are unlinkable on-chain. /pay unlocks an article; /wallet, /history, /shield and /verify do the rest. I trigger the same on-chain operations as the UI — I never touch your keys or your note secret.',
+        'Hey — I’m Hermes, your VeilGate agent. /settle sends XLM through the shielded pool (real Stellar Testnet) — your deposit and the payment to the publisher are unlinkable on-chain. /wallet, /history and /verify do the rest. I trigger the same on-chain operations as the UI — I never touch your keys or your note secret.',
     },
   ]);
   const [input, setInput] = useState('');
