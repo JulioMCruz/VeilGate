@@ -75,7 +75,7 @@ A fix is accepted only when, verified on Horizon:
 - [x] `withdraw.source_account == <relayer address>` (a fixed account shared by many payments). *(relayer `GAJIZIWL…`.)*
 - [x] No argument, memo, or event in the withdraw references the depositor. *(withdraw args are proof + root + nullifier + recipient only.)*
 - [x] Withdraw is warned + gated when the pool's anonymity set is below `k`. *(condition 3.)*
-- [ ] Scenario test: with ≥ 2 users depositing the same denomination in an overlapping window, an observer cannot match depositor → payout better than chance. *(pending a multi-user run.)*
+- [x] Scenario test: with ≥ 2 users depositing the same denomination in an overlapping window, an observer cannot match depositor → payout better than chance. *(verified — `pool/scripts/unlinkability_scenario.mjs` (`npm run scenario`): depositors `GD2AW25P…` / `GDVPSRWA…` (distinct) both paid via the single relayer `GAJIZIWL…` to publishers `GCQ44ZUU…` / `GD5JXM7D…`; deposit sources distinct, withdraw sources identical, no depositor reference → matching is 1/N.)*
 
 ## 7. Trust model
 
