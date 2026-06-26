@@ -269,7 +269,8 @@ export function SettleFlow() {
           Deposit &amp; pay privately
         </button>
         <p className="mt-2 text-center text-[11px] text-gray-500">
-          You&apos;ll sign two transactions in Freighter (deposit + withdraw).
+          You&apos;ll sign one transaction in Freighter (the deposit). The payout is
+          submitted by a relayer, so it can&apos;t be linked to you on-chain.
         </p>
       </Card>
 
