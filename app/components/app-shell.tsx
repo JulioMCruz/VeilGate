@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useWallet } from '@/lib/providers/wallet-provider';
 import { useHermes } from '@/components/hermes';
-import { TestnetPill, CopyButton, truncate } from '@/components/ui';
+import { NetworkPill, CopyButton, truncate } from '@/components/ui';
 
 // Only the real, on-chain XLM settlement flow is surfaced. The earlier
 // content-unlock / shield routes are proving demos that move no value, so they
@@ -31,7 +31,7 @@ export function TopBar() {
         VeilGate
       </Link>
       <div className="flex items-center gap-3">
-        <TestnetPill />
+        <NetworkPill />
         {address && (
           <span className="hidden items-center gap-2 rounded-lg border border-veil-900/70 px-3 py-1.5 text-xs text-gray-300 sm:flex">
             <span className="mono">{truncate(address)}</span>

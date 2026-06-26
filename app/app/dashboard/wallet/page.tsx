@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useWallet } from '@/lib/providers/wallet-provider';
-import { Card, CopyButton, TestnetPill } from '@/components/ui';
+import { Card, CopyButton, NetworkPill } from '@/components/ui';
 
 export default function WalletPage() {
   const router = useRouter();
@@ -20,7 +20,7 @@ export default function WalletPage() {
       <Card className="mt-6">
         <div className="flex items-center justify-between">
           <span className="text-sm text-gray-400">Network</span>
-          <TestnetPill />
+          <NetworkPill />
         </div>
         <div className="mt-3 flex items-center justify-between gap-2">
           <span className="text-sm text-gray-400">Address</span>
