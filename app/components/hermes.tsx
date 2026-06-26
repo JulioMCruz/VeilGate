@@ -105,7 +105,7 @@ export function HermesDrawer() {
             ? `Last ${Math.min(h.length, 5)} payments (the link to your deposit stays private):\n` +
                 h
                   .slice(0, 5)
-                  .map((r) => `• ${domainOf(r.contentUrl)} · ${r.nullifier.slice(0, 12)}… · deposit↔payment: unlinkable`)
+                  .map((r) => `• ${r.publisherDomain} · ${r.nullifier.slice(0, 12)}… · deposit↔payment: unlinkable`)
                   .join('\n')
             : 'No payments yet. Use /settle to make your first private payment.'
         );

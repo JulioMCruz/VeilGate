@@ -39,7 +39,7 @@ export default function ConnectPage() {
                 Connected — {truncate(address ?? '')}
               </p>
               <button
-                onClick={() => router.push('/dashboard/pay')}
+                onClick={() => router.push('/dashboard')}
                 className="mt-3 w-full rounded-xl bg-veil-600 px-4 py-3 text-sm font-medium text-white hover:bg-veil-500"
               >
                 Open dashboard →
