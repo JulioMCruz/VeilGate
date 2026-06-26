@@ -6,6 +6,7 @@ import { payPrivately, countDeposits } from '@/lib/pool';
 import { addReceipt } from '@/lib/history';
 import { DENOMINATIONS, DEFAULT_DENOMINATION, type Denomination } from '@/lib/pool-config';
 import { Card, CopyButton, PrivacyBadge, ExplorerLink, truncate } from '@/components/ui';
+import { PendingWithdraws } from '@/components/pending-withdraws';
 
 type Stage = 'idle' | 'depositing' | 'proving' | 'paying' | 'done' | 'error';
 
@@ -207,6 +208,7 @@ export function SettleFlow() {
 
   return (
     <div className="mx-auto max-w-xl">
+      <PendingWithdraws />
       <h1 className="text-2xl font-bold">Pay a publisher — real settlement</h1>
       <p className="mt-1 text-sm text-gray-400">
         A real {denom.label} payment on Stellar testnet, routed through the shielded pool. Your

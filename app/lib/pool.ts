@@ -23,6 +23,7 @@ import {
 } from '@stellar/stellar-sdk';
 import { signTransaction } from '@stellar/freighter-api';
 import { type Denomination, DEFAULT_DENOMINATION } from './pool-config';
+import { addPending, updatePending, removePending, type PendingNote } from './pending';
 
 /** Default pool (the 0.1 XLM denomination), kept for convenience. */
 export const POOL_ID =
@@ -248,6 +249,61 @@ export async function recipientFieldFor(publisher: string): Promise<bigint> {
 }
 
 /**
+ * Steps 2–4 of a payment: rebuild the tree from chain, prove membership in the
+ * browser, and withdraw (paid via the relayer). Shared by the full pay flow and
+ * the retry path (#9). The secret never leaves the device.
+ */
+async function proveAndWithdraw(
+  server: rpc.Server,
+  note: Note,
+  publisher: string,
+  poolId: string,
+  onStage?: (s: 'depositing' | 'proving' | 'paying') => void
+): Promise<{ withdrawHash: string; nullifierHash: bigint; root: bigint; anonymitySet: number }> {
+  // rebuild the tree from chain events -> this note's path
+  onStage?.('proving');
+  const leaves = await fetchCommitments(server, poolId);
+  const index = leaves.findIndex((c) => c === note.commitment);
+  if (index < 0) throw new Error('deposit not yet indexed; retry');
+  const { root, pathElements, pathIndices } = pathFor(leaves, index);
+  const anonymitySet = leaves.length;
+
+  const recipientField = await recipientFieldFor(publisher);
+  const nullifierHash = poseidon1([note.nullifier]);
+
+  // Groth16 proof (browser) — secret stays local
+  const snarkjs = await import('snarkjs');
+  const { proof } = await snarkjs.groth16.fullProve(
+    {
+      root: root.toString(),
+      nullifierHash: nullifierHash.toString(),
+      recipient: recipientField.toString(),
+      nullifier: note.nullifier.toString(),
+      secret: note.secret.toString(),
+      pathElements,
+      pathIndices,
+    },
+    '/pool/withdraw.wasm',
+    '/pool/withdraw_final.zkey'
+  );
+
+  // withdraw — verified on-chain against the recent root, paid via the relayer so
+  // the payout does NOT originate from the depositor's account (unlinkable, #2).
+  onStage?.('paying');
+  const withdrawHash = await relayWithdraw({
+    piA: g1(proof.pi_a),
+    piB: g2(proof.pi_b),
+    piC: g1(proof.pi_c),
+    root: be32hex(root),
+    nullifierHash: be32hex(nullifierHash),
+    recipient: publisher,
+    poolId,
+  });
+
+  return { withdrawHash, nullifierHash, root, anonymitySet };
+}
+
+/**
  * Full trustless flow: deposit the note, rebuild the tree from chain, prove
  * membership in the browser, and withdraw (which pays the publisher).
  * `onStage` reports progress: 'depositing' | 'proving' | 'paying'.
@@ -261,8 +317,6 @@ export async function payPrivately(
   const server = new rpc.Server(RPC_URL);
   const poolId = denom.poolId;
   const note = newNote();
-  const recipientField = await recipientFieldFor(publisher);
-  const nullifierHash = poseidon1([note.nullifier]);
 
   // #8 pre-flight: a payout to a brand-new account must be at least the 1 XLM
   // account-creation minimum, otherwise the on-chain transfer fails AFTER the
@@ -282,6 +336,21 @@ export async function payPrivately(
     );
   }
 
+  // #9: persist the note BEFORE depositing, so a failed/abandoned withdraw can be
+  // retried instead of stranding the deposit (the secret never leaves the device).
+  const pendingId = be32hex(note.commitment);
+  addPending(from, {
+    id: pendingId,
+    secret: note.secret.toString(),
+    nullifier: note.nullifier.toString(),
+    commitment: note.commitment.toString(),
+    publisher,
+    poolId,
+    denomLabel: denom.label,
+    depositHash: '',
+    createdAt: new Date().toISOString(),
+  });
+
   // 1. deposit (commitment) — contract recomputes the root on-chain
   onStage?.('depositing');
   const commitmentHex = be32hex(note.commitment);
@@ -289,47 +358,19 @@ export async function payPrivately(
     new Address(from).toScVal(),
     xdr.ScVal.scvBytes(bufFromHex(commitmentHex)),
   ]);
+  updatePending(from, pendingId, { depositHash });
 
-  // 2. rebuild the tree from chain events -> this note's path
-  onStage?.('proving');
-  const leaves = await fetchCommitments(server, poolId);
-  const index = leaves.findIndex((c) => c === note.commitment);
-  if (index < 0) throw new Error('deposit not yet indexed; retry');
-  const { root, pathElements, pathIndices } = pathFor(leaves, index);
-  const anonymitySet = leaves.length;
-
-  // 3. Groth16 proof (browser) — secret stays local
-  const snarkjs = await import('snarkjs');
-  const { proof } = await snarkjs.groth16.fullProve(
-    {
-      root: root.toString(),
-      nullifierHash: nullifierHash.toString(),
-      recipient: recipientField.toString(),
-      nullifier: note.nullifier.toString(),
-      secret: note.secret.toString(),
-      pathElements,
-      pathIndices,
-    },
-    '/pool/withdraw.wasm',
-    '/pool/withdraw_final.zkey'
+  // 2-4. rebuild the tree, prove membership, and withdraw via the relayer.
+  const { withdrawHash, nullifierHash, root, anonymitySet } = await proveAndWithdraw(
+    server,
+    note,
+    publisher,
+    poolId,
+    onStage
   );
 
-  // 4. withdraw — verifies on-chain against the recent root, pays the publisher.
-  //    The contract re-derives the recipient field from `recipient`, so the proof
-  //    is bound to this exact account (a swapped recipient fails verification).
-  //    Submitted via the server-side relayer so the payout does NOT originate from
-  //    the depositor's account — this is what keeps the deposit and the payment
-  //    unlinkable on-chain (QA finding #2).
-  onStage?.('paying');
-  const withdrawHash = await relayWithdraw({
-    piA: g1(proof.pi_a),
-    piB: g2(proof.pi_b),
-    piC: g1(proof.pi_c),
-    root: be32hex(root),
-    nullifierHash: be32hex(nullifierHash),
-    recipient: publisher,
-    poolId,
-  });
+  // success — the deposit is settled; drop the persisted note.
+  removePending(from, pendingId);
 
   return {
     depositHash,
@@ -337,6 +378,41 @@ export async function payPrivately(
     nullifierHash: be32hex(nullifierHash),
     root: be32hex(root),
     poolId,
+    proofBytes: 256,
+    anonymitySet,
+  };
+}
+
+/**
+ * Retry the withdraw for a previously-deposited note whose withdraw failed or was
+ * abandoned (#9). Re-proves membership and submits via the relayer — no new
+ * deposit. Clears the persisted note on success.
+ */
+export async function retryWithdraw(
+  from: string,
+  pending: PendingNote,
+  onStage?: (s: 'depositing' | 'proving' | 'paying') => void
+): Promise<PayResult> {
+  const server = new rpc.Server(RPC_URL);
+  const note: Note = {
+    secret: BigInt(pending.secret),
+    nullifier: BigInt(pending.nullifier),
+    commitment: BigInt(pending.commitment),
+  };
+  const { withdrawHash, nullifierHash, root, anonymitySet } = await proveAndWithdraw(
+    server,
+    note,
+    pending.publisher,
+    pending.poolId,
+    onStage
+  );
+  removePending(from, pending.id);
+  return {
+    depositHash: pending.depositHash,
+    withdrawHash,
+    nullifierHash: be32hex(nullifierHash),
+    root: be32hex(root),
+    poolId: pending.poolId,
     proofBytes: 256,
     anonymitySet,
   };
