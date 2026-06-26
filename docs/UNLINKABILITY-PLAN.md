@@ -51,8 +51,13 @@ Moving the source account is **necessary but not sufficient**. All of the follow
 
 1. **Different source account.** Withdraw `source_account` = relayer, never the depositor. *(the core fix)*
 2. **No depositor-identifying data in the withdraw.** Already true — the depositor's address is not an argument, and the request to the relayer must not include it (it isn't needed).
-3. **Minimum anonymity set.** If a pool has only your deposit, you're trivially linked. Gate the withdraw (refuse or clearly warn) until the pool has at least `k` deposits (e.g. `k ≥ 5`). Surface the live set size (already shown in the UI).
-4. **Time decorrelation.** A single deposit followed by a single withdraw seconds later is correlatable even across different source accounts. Mitigate with: a randomized delay, and/or **decoupling deposit from withdraw in time** — i.e. make the "shield" model real (pre-deposit notes now, withdraw later when the set is larger).
+3. **Minimum anonymity set.** ✅ *Implemented.* The Pay screen surfaces the live set size and, when
+   it is below `k = 5`, shows a warning and requires an explicit acknowledgment to proceed (and
+   points to Shield-and-pay-later). `components/settle-flow.tsx` (`K_MIN`, `smallSet`, `ackSmallSet`).
+4. **Time decorrelation.** ✅ *Implemented (decoupling).* "Shield now, pay later" deposits the note
+   now (`shieldDeposit` in `lib/pool.ts`) and completes the payout later from the pending list
+   (`components/pending-withdraws.tsx`) — so the deposit and the withdraw need not be seconds apart.
+   A randomized delay is a further optional hardening.
 5. **Relayer hygiene.** The relayer must not log `IP ↔ recipient`; must rate-limit (anti-DoS); must keep its signer key **server-side only**; and must not also be the deposit RPC/observer (otherwise it can correlate both legs).
 6. **Network metadata.** The same browser performs the deposit (to RPC) and the withdraw request (to the relayer). An adversary observing both could correlate by IP/timing. Acceptable as a documented residual for the demo; for production, separate the paths and/or add delay.
 
@@ -66,11 +71,11 @@ No on-chain field links `C ↔ N` (that is the ZK property), there is no shared 
 ## 6. Acceptance criteria (how we verify on-chain)
 
 A fix is accepted only when, verified on Horizon:
-- [ ] `deposit.source_account ≠ withdraw.source_account` for every payment.
-- [ ] `withdraw.source_account == <relayer address>` (a fixed account shared by many payments).
-- [ ] No argument, memo, or event in the withdraw references the depositor.
-- [ ] Withdraw is rejected/warned when the pool's anonymity set is below `k`.
-- [ ] Scenario test: with ≥ 2 users depositing the same denomination in an overlapping window, an observer cannot match depositor → payout better than chance.
+- [x] `deposit.source_account ≠ withdraw.source_account` for every payment. *(verified: deposit `6db258ac…` source `GAZLMPAT…` ≠ withdraw `5622d492…` source `GAJIZIWL…`, the relayer.)*
+- [x] `withdraw.source_account == <relayer address>` (a fixed account shared by many payments). *(relayer `GAJIZIWL…`.)*
+- [x] No argument, memo, or event in the withdraw references the depositor. *(withdraw args are proof + root + nullifier + recipient only.)*
+- [x] Withdraw is warned + gated when the pool's anonymity set is below `k`. *(condition 3.)*
+- [ ] Scenario test: with ≥ 2 users depositing the same denomination in an overlapping window, an observer cannot match depositor → payout better than chance. *(pending a multi-user run.)*
 
 ## 7. Trust model
 

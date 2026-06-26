@@ -363,6 +363,59 @@ export async function payPrivately(
 }
 
 /**
+ * Shield: deposit a note now and persist it, but DON'T pay yet. The payout is
+ * completed later (from the pending list), decoupling the deposit from the
+ * withdraw in time — UNLINKABILITY-PLAN condition 4. Returns the deposit hash.
+ */
+export async function shieldDeposit(
+  from: string,
+  publisher: string,
+  denom: Denomination,
+  onStage?: (s: 'depositing') => void
+): Promise<{ depositHash: string }> {
+  const server = new rpc.Server(RPC_URL);
+  const poolId = denom.poolId;
+  const note = newNote();
+
+  // #8 pre-flight: a payout to a brand-new account needs the 1 XLM minimum.
+  const ACCOUNT_MIN_STROOPS = 10_000_000;
+  let recipientExists = true;
+  try {
+    await server.getAccount(publisher);
+  } catch {
+    recipientExists = false;
+  }
+  if (!recipientExists && denom.stroops < ACCOUNT_MIN_STROOPS) {
+    throw new Error(
+      `The recipient account doesn't exist on-chain yet, and ${denom.label} can't create it ` +
+        `(Stellar needs at least 1 XLM to open a new account). Fund the recipient first, ` +
+        `or use the 1 or 10 XLM denomination.`
+    );
+  }
+
+  const pendingId = be32hex(note.commitment);
+  addPending(from, {
+    id: pendingId,
+    secret: note.secret.toString(),
+    nullifier: note.nullifier.toString(),
+    commitment: note.commitment.toString(),
+    publisher,
+    poolId,
+    denomLabel: denom.label,
+    depositHash: '',
+    createdAt: new Date().toISOString(),
+  });
+
+  onStage?.('depositing');
+  const depositHash = await invoke(server, from, poolId, 'deposit', [
+    new Address(from).toScVal(),
+    xdr.ScVal.scvBytes(bufFromHex(be32hex(note.commitment))),
+  ]);
+  updatePending(from, pendingId, { depositHash });
+  return { depositHash };
+}
+
+/**
  * Retry the withdraw for a previously-deposited note whose withdraw failed or was
  * abandoned (#9). Re-proves membership and submits via the relayer — no new
  * deposit. Clears the persisted note on success.
