@@ -61,10 +61,11 @@ export function PendingWithdraws() {
 
   return (
     <Card className="mb-6 border-amber-500/40 bg-amber-950/20">
-      <p className="text-sm font-semibold text-amber-300">Pending deposits</p>
+      <p className="text-sm font-semibold text-amber-300">Shielded notes — pay anytime</p>
       <p className="mt-1 text-xs text-gray-400">
-        These deposits were made but the payout didn&apos;t complete. Your note is saved on
-        this device — retry to finish the payment. No new deposit is made.
+        Deposits waiting for their payout — a note you shielded to pay later, or a payout that
+        didn&apos;t finish. Your note is saved on this device. Pay the publisher anytime; no new
+        deposit is made, and paying later makes the two transactions harder to link.
       </p>
       <div className="mt-3 space-y-2">
         {pending.map((p) => (
@@ -82,7 +83,7 @@ export function PendingWithdraws() {
               disabled={busyId !== null}
               className="rounded-lg bg-veil-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-veil-500 disabled:opacity-50"
             >
-              {busyId === p.id ? 'Retrying…' : 'Retry payout'}
+              {busyId === p.id ? 'Paying…' : 'Pay now'}
             </button>
           </div>
         ))}

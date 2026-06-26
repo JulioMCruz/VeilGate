@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useWallet } from '@/lib/providers/wallet-provider';
-import { payPrivately, countDeposits } from '@/lib/pool';
+import { payPrivately, shieldDeposit, countDeposits } from '@/lib/pool';
 import { addReceipt } from '@/lib/history';
 import { DENOMINATIONS, DEFAULT_DENOMINATION, type Denomination } from '@/lib/pool-config';
 import { Card, CopyButton, PrivacyBadge, ExplorerLink, truncate } from '@/components/ui';
@@ -32,6 +32,10 @@ const PROGRESS: Record<Stage, number> = {
   error: 0,
 };
 
+// Minimum anonymity set (UNLINKABILITY-PLAN condition 3): below this, a payment is
+// weakly anonymous, so we warn and require an explicit acknowledgment.
+const K_MIN = 5;
+
 interface Receipt {
   depositHash: string;
   withdrawHash: string;
@@ -53,6 +57,9 @@ export function SettleFlow() {
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [poolSize, setPoolSize] = useState<number | null>(null);
+  const [ackSmallSet, setAckSmallSet] = useState(false);
+  const [shieldMsg, setShieldMsg] = useState<string | null>(null);
+  const smallSet = poolSize !== null && poolSize < K_MIN;
 
   const busy = !['idle', 'done', 'error'].includes(stage);
   const publisherValid = /^G[A-Z2-7]{55}$/.test(publisher);
@@ -62,6 +69,7 @@ export function SettleFlow() {
     if (!address) return;
     let live = true;
     setPoolSize(null);
+    setAckSmallSet(false);
     countDeposits(denom.poolId, address)
       .then((n) => live && setPoolSize(n))
       .catch(() => live && setPoolSize(null));
@@ -111,6 +119,30 @@ export function SettleFlow() {
       setStage('done');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Settlement failed');
+      setStage('error');
+    }
+  }
+
+  async function shield() {
+    if (!address) return;
+    if (!publisherValid) {
+      setError('Enter a valid Stellar account address (G…) for the publisher.');
+      setStage('error');
+      return;
+    }
+    setError(null);
+    setReceipt(null);
+    setShieldMsg(null);
+    try {
+      setStage('depositing');
+      await shieldDeposit(address, publisher, denom, (s) => setStage(s));
+      setStage('idle');
+      setShieldMsg(
+        'Shielded — your note is deposited. Complete the payout anytime below; paying later ' +
+          'decouples the deposit from the withdraw in time, making them even harder to link.'
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Shield failed');
       setStage('error');
     }
   }
@@ -271,19 +303,47 @@ export function SettleFlow() {
             <span className="mono"> Test Net</span> to make a payment.
           </p>
         )}
+        {smallSet && (
+          <label className="mt-4 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+            <input
+              type="checkbox"
+              checked={ackSmallSet}
+              onChange={(e) => setAckSmallSet(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              Only {poolSize} deposit{poolSize === 1 ? '' : 's'} in this pool — fewer than {K_MIN},
+              so anonymity is weak (an observer could narrow down the link). For real privacy, wait
+              for more deposits or <strong>shield now and pay later</strong>. Proceed anyway?
+            </span>
+          </label>
+        )}
         <button
           onClick={pay}
-          disabled={!publisherValid || wrongNetwork}
-          className="mt-5 w-full rounded-xl bg-veil-600 px-6 py-3 font-medium text-white hover:bg-veil-500 disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={!publisherValid || wrongNetwork || (smallSet && !ackSmallSet)}
+          className="mt-4 w-full rounded-xl bg-veil-600 px-6 py-3 font-medium text-white hover:bg-veil-500 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Deposit &amp; pay privately
+          Deposit &amp; pay now
+        </button>
+        <button
+          onClick={shield}
+          disabled={!publisherValid || wrongNetwork}
+          className="mt-2 w-full rounded-xl border border-veil-700 px-6 py-3 text-sm font-medium text-veil-200 hover:bg-veil-900/40 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Shield now, pay later (stronger privacy)
         </button>
         <p className="mt-2 text-center text-[11px] text-gray-500">
-          You&apos;ll sign one transaction in Freighter (the deposit). The payout is
-          submitted by a relayer, so it can&apos;t be linked to you on-chain.
+          You&apos;ll sign one transaction in Freighter (the deposit). The payout is submitted by a
+          relayer, so it can&apos;t be linked to you on-chain. <strong>Shield</strong> deposits now
+          and lets you pay later — decoupling the two in time makes them even harder to correlate.
         </p>
       </Card>
 
+      {shieldMsg && (
+        <p className="mt-4 rounded-lg border border-veil-500/40 bg-veil-900/40 px-3 py-2 text-sm text-veil-200">
+          {shieldMsg}
+        </p>
+      )}
       {error && <p className="mt-4 text-center text-sm text-red-400">{error}</p>}
     </div>
   );
