@@ -77,14 +77,18 @@ destination in `publisherDomain` (`contentUrl` is empty).
 
 ---
 
-## Suggested order of work
-1. **#1, #7** — one-liners, zero risk.
-2. **#5/#6** — remove dead demos (shrinks risk surface before judging).
-3. **#4, #3** — network detection + balance display.
-4. **#8, #9** — fund-safety, folded into the relayer redesign (#2).
-5. **#2** — the headline relayer fix (see `UNLINKABILITY-PLAN.md`).
+## Implementation status (branch `fix/unlinkable-withdraw-relayer`)
+- ✅ **#2** — relayer-submitted withdraw (verified on-chain).
+- ✅ **#1** — connect redirect goes to `/dashboard`.
+- ✅ **#7** — Hermes `/history` shows `publisherDomain`.
+- ✅ **#3** — wallet balance shows full decimals.
+- ✅ **#4** — wallet network detected; settle screen gates wrong network.
+- ✅ **#5/#6** — broken bb.js demo pages removed.
+- ✅ **#8** — payment to a non-existent account below 1 XLM is blocked before depositing.
+- ⏳ **#9** — note persistence + retry UI for stranded deposits (larger; folds into the relayer/contract redesign).
+- ↗ **#10** — architectural (event-retention); escalated to the contract side.
 
 ## Pending QA
-- Reject the 2nd (withdraw) signature mid-flow — does the UI recover? (relates to #9)
+- Reject the 2nd (withdraw) signature mid-flow — does the UI recover? (relates to #9; note: with the relayer, the user only signs the deposit now)
 - Double-spend (nullifier) — needs a separate technical test.
-- `npm test` (22 Vitest) + `npm run build` baseline.
+- `npm test` (22 Vitest) — currently green; `npm run build` baseline.
