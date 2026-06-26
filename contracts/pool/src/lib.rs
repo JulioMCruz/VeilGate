@@ -39,7 +39,14 @@ pub enum DataKey {
     VkDelta,
     VkIc,
     Nullifier(BytesN<32>),
+    /// Deposited commitment by leaf index — stored durably so clients can rebuild
+    /// the tree without depending on RPC event retention.
+    Commitment(u32),
 }
+
+// Keep tree state + commitments alive well beyond a demo window.
+const TTL_THRESHOLD: u32 = 17_280; // ~1 day
+const TTL_EXTEND_TO: u32 = 518_400; // ~30 days
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -98,8 +105,34 @@ impl Pool {
             Some(i) => i,
             None => panic_with_error!(&env, Error::TreeFull),
         };
+
+        // Store the commitment durably so the full leaf set is always retrievable.
+        let p = env.storage().persistent();
+        p.set(&DataKey::Commitment(idx), &commitment);
+        p.extend_ttl(&DataKey::Commitment(idx), TTL_THRESHOLD, TTL_EXTEND_TO);
+        s.extend_ttl(TTL_THRESHOLD, TTL_EXTEND_TO);
+
         env.events().publish((symbol_short!("deposit"),), (commitment, idx));
         idx
+    }
+
+    /// Number of deposits (leaves) in the tree.
+    pub fn leaf_count(env: Env) -> u32 {
+        merkle::leaf_count(&env)
+    }
+
+    /// Every commitment in insertion order. Lets a client rebuild the Merkle tree
+    /// deterministically without replaying RPC `deposit` events (which expire).
+    pub fn commitments(env: Env) -> Vec<BytesN<32>> {
+        let n = merkle::leaf_count(&env);
+        let p = env.storage().persistent();
+        let mut out: Vec<BytesN<32>> = Vec::new(&env);
+        let mut i = 0u32;
+        while i < n {
+            out.push_back(p.get(&DataKey::Commitment(i)).unwrap());
+            i += 1;
+        }
+        out
     }
 
     pub fn is_known_root(env: Env, root: BytesN<32>) -> bool {

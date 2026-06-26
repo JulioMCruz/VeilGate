@@ -100,58 +100,35 @@ function pathFor(leaves: bigint[], index: number): {
 }
 
 /**
- * Read every commitment deposited, in leaf-index order, from chain events.
- * Paginates by advancing the start ledger and de-duplicating by event id, so it
- * handles pools with more deposits than one RPC page returns.
+ * Read every commitment in insertion order from the pool's on-chain `commitments()`
+ * getter (a read-only simulation). The contract stores commitments durably, so the
+ * tree is always reconstructable — independent of RPC event retention (fixes the
+ * `RootUnknown`-after-ageout failure). `caller` is only the simulation source.
  */
-async function fetchCommitments(server: rpc.Server, poolId: string): Promise<bigint[]> {
-  const latest = await server.getLatestLedger();
-  // The Soroban RPC only retains events for a limited window; a startLedger
-  // older than that returns nothing (or errors), so stay inside it. ~9000 ledgers
-  // (~12h) is comfortably within testnet retention and covers a demo pool.
-  let windowBack = 9000;
-  let start = Math.max(1, latest.sequence - windowBack);
-  const byIndex = new Map<number, bigint>();
-  const seen = new Set<string>();
-  for (let page = 0; page < 50; page++) {
-    let res;
-    try {
-      res = await server.getEvents({
-        startLedger: start,
-        filters: [{ type: 'contract', contractIds: [poolId] }],
-        limit: 200,
-      });
-    } catch {
-      // startLedger fell outside retention — narrow the window and retry.
-      windowBack = Math.floor(windowBack / 2);
-      if (windowBack < 500) break;
-      start = Math.max(1, latest.sequence - windowBack);
-      continue;
-    }
-    const evs = res.events ?? [];
-    let fresh = 0;
-    for (const ev of evs) {
-      const id = (ev as { id: string }).id;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      fresh += 1;
-      try {
-        const topics = (ev.topic ?? []).map((t) => scValToNative(t));
-        if (topics[0] !== 'deposit') continue;
-        const data = scValToNative(ev.value) as [Uint8Array, number];
-        byIndex.set(Number(data[1]), BigInt('0x' + Buffer.from(data[0]).toString('hex')));
-      } catch {
-        /* skip non-deposit events */
-      }
-    }
-    // Last page (short) or nothing new (single over-full ledger): stop.
-    if (evs.length < 200 || fresh === 0) break;
-    start = (evs[evs.length - 1] as { ledger: number }).ledger;
+async function fetchCommitments(
+  server: rpc.Server,
+  poolId: string,
+  caller: string
+): Promise<bigint[]> {
+  const account = await server.getAccount(caller);
+  const tx = new TransactionBuilder(account, {
+    fee: BASE_FEE,
+    networkPassphrase: Networks.TESTNET,
+  })
+    .addOperation(
+      Operation.invokeContractFunction({ contract: poolId, function: 'commitments', args: [] })
+    )
+    .setTimeout(60)
+    .build();
+
+  const sim = await server.simulateTransaction(tx);
+  if (rpc.Api.isSimulationError(sim)) {
+    throw new Error(`commitments() simulation failed: ${sim.error}`);
   }
-  const max = byIndex.size ? Math.max(...byIndex.keys()) : -1;
-  const leaves: bigint[] = [];
-  for (let i = 0; i <= max; i++) leaves.push(byIndex.get(i) ?? 0n);
-  return leaves;
+  const retval = sim.result?.retval;
+  if (!retval) return [];
+  const arr = (scValToNative(retval) as Uint8Array[]) ?? [];
+  return arr.map((b) => BigInt('0x' + Buffer.from(b).toString('hex')));
 }
 
 async function signAndSend(server: rpc.Server, tx: string): Promise<string> {
@@ -228,9 +205,9 @@ export interface PayResult {
 }
 
 /** How many deposits are currently in a pool — the anonymity set you blend into. */
-export async function countDeposits(poolId: string): Promise<number> {
+export async function countDeposits(poolId: string, caller: string): Promise<number> {
   const server = new rpc.Server(RPC_URL);
-  const leaves = await fetchCommitments(server, poolId);
+  const leaves = await fetchCommitments(server, poolId, caller);
   return leaves.length;
 }
 
@@ -255,14 +232,15 @@ export async function recipientFieldFor(publisher: string): Promise<bigint> {
  */
 async function proveAndWithdraw(
   server: rpc.Server,
+  from: string,
   note: Note,
   publisher: string,
   poolId: string,
   onStage?: (s: 'depositing' | 'proving' | 'paying') => void
 ): Promise<{ withdrawHash: string; nullifierHash: bigint; root: bigint; anonymitySet: number }> {
-  // rebuild the tree from chain events -> this note's path
+  // rebuild the tree from the contract's durable commitment set -> this note's path
   onStage?.('proving');
-  const leaves = await fetchCommitments(server, poolId);
+  const leaves = await fetchCommitments(server, poolId, from);
   const index = leaves.findIndex((c) => c === note.commitment);
   if (index < 0) throw new Error('deposit not yet indexed; retry');
   const { root, pathElements, pathIndices } = pathFor(leaves, index);
@@ -363,6 +341,7 @@ export async function payPrivately(
   // 2-4. rebuild the tree, prove membership, and withdraw via the relayer.
   const { withdrawHash, nullifierHash, root, anonymitySet } = await proveAndWithdraw(
     server,
+    from,
     note,
     publisher,
     poolId,
@@ -401,6 +380,7 @@ export async function retryWithdraw(
   };
   const { withdrawHash, nullifierHash, root, anonymitySet } = await proveAndWithdraw(
     server,
+    from,
     note,
     pending.publisher,
     pending.poolId,

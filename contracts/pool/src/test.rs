@@ -203,3 +203,22 @@ fn merkle_keeps_a_root_history() {
     assert!(pool.is_known_root(&root_after_1), "old root still in history");
     assert!(pool.is_known_root(&root_after_2));
 }
+
+#[test]
+fn commitments_getter_returns_the_full_leaf_set() {
+    // The durable getter lets clients rebuild the tree without RPC event retention.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (pool, _token, depositor) = setup(&env);
+
+    let c0 = bn32(&env, fx::COMMITMENT);
+    let c1 = bn32(&env, &"11".repeat(32));
+    pool.deposit(&depositor, &c0);
+    pool.deposit(&depositor, &c1);
+
+    assert_eq!(pool.leaf_count(), 2);
+    let cs = pool.commitments();
+    assert_eq!(cs.len(), 2);
+    assert_eq!(cs.get(0).unwrap(), c0);
+    assert_eq!(cs.get(1).unwrap(), c1);
+}

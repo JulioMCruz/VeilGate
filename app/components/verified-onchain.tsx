@@ -9,8 +9,8 @@ import { DENOMINATIONS } from '@/lib/pool-config';
 const PROVEN: { label: string; deposit: string; withdraw: string }[] = [
   {
     label: 'Private payment · 0.1 XLM',
-    deposit: '36972c83fb9071cd9ba1803836254370c461a1a6d894c97d975cedb8c53d7a37',
-    withdraw: '8b4a91807c4b9e9d611ae6768dacfc62d87d43fbcf8e1f0b787331f13a9a1d91',
+    deposit: '6db258acc20d9fe98cee011684990f208590a476b3d0324ab51a5992cd503fbf',
+    withdraw: '5622d49292ef40536f0b0883672a5f0718efd5932e434837eecbac146ab906b8',
   },
 ];
 

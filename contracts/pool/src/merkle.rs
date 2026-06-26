@@ -124,3 +124,8 @@ pub fn current_root(env: &Env) -> U256 {
     let roots: Vec<U256> = s.get(&MKey::Roots).unwrap();
     roots.get(idx).unwrap()
 }
+
+/// Number of leaves inserted so far.
+pub fn leaf_count(env: &Env) -> u32 {
+    env.storage().instance().get(&MKey::NextIndex).unwrap()
+}
