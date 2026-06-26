@@ -59,15 +59,16 @@ export function SettleFlow() {
 
   // Anonymity-set indicator: how many deposits are already in the chosen pool.
   useEffect(() => {
+    if (!address) return;
     let live = true;
     setPoolSize(null);
-    countDeposits(denom.poolId)
+    countDeposits(denom.poolId, address)
       .then((n) => live && setPoolSize(n))
       .catch(() => live && setPoolSize(null));
     return () => {
       live = false;
     };
-  }, [denom.poolId]);
+  }, [denom.poolId, address]);
 
   async function pay() {
     if (!address) return;

@@ -12,6 +12,7 @@ and its deposit stays private (unlinkable); the per-note amount is the public fi
 | `deposit(from, commitment) -> u32` | Pull `denom` of the token from `from`, insert `commitment` into the on-chain Merkle tree (**recomputes the root**), return leaf index |
 | `withdraw(proof_a, proof_b, proof_c, root, nullifier_hash, recipient)` | Verify the Groth16 proof on-chain against a recent root, ensure the nullifier is unspent, transfer `denom` to `recipient`. The proof's recipient field is **derived from `recipient` on-chain** (`sha256(strkey)`), binding the proof to who gets paid |
 | `is_known_root(root) -> bool`, `is_spent(nullifier_hash) -> bool`, `current_root() -> BytesN<32>` | Views |
+| `leaf_count() -> u32`, `commitments() -> Vec<BytesN<32>>` | **Durable leaf set.** `deposit` stores each commitment in persistent storage; clients rebuild the Merkle tree from `commitments()` (a read-only simulation) instead of replaying RPC `deposit` events — which expire, so an aged pool would otherwise fail every withdraw with `RootUnknown`. |
 
 There is **no `push_root` / admin** — the contract anchors the root itself (see Trust model).
 
@@ -22,7 +23,7 @@ Withdraw runs the Groth16/BN254 pairing check inline via the native host functio
 
 Deployed and exercised end-to-end on Stellar testnet:
 
-- Pool: `CDZGIFZFRFKYIMSPBLA2OSFVD5RIUVVVWRVN5LPAHYHDGH6LOEGKGD7H`
+- Pool: `CBTZN7SA4LU7FGWZCXBYHMQKP4MAC6PBX6NAXPBXO45HIFLQ6FNRRNCI`
 - Token: native XLM SAC `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC`
 - Denomination: `1_000_000` stroops (0.1 XLM)
 
@@ -76,8 +77,8 @@ anonymity set meaningful. Deployed on testnet:
 
 | Amount | Stroops | Pool |
 |---|---|---|
-| 0.1 XLM | `1_000_000` | `CDZGIFZFRFKYIMSPBLA2OSFVD5RIUVVVWRVN5LPAHYHDGH6LOEGKGD7H` |
-| 1 XLM | `10_000_000` | `CBIIKKJHZKA77YWXIITCUX6HFVEWIZAJYKO2Q6ZL3SJ3ZTFUY4RESJ2Z` |
-| 10 XLM | `100_000_000` | `CB27XGZ53S3WGDJE3MN3EHKPBXAMELAK7NY5ZD42ES7ZSLMF7AHTC57E` |
+| 0.1 XLM | `1_000_000` | `CBTZN7SA4LU7FGWZCXBYHMQKP4MAC6PBX6NAXPBXO45HIFLQ6FNRRNCI` |
+| 1 XLM | `10_000_000` | `CAUZIYXM2QGFCGHIIWZCXMK7NRJ2PWN3TAZS22RIYI7AFP2U4TIS7B2Z` |
+| 10 XLM | `100_000_000` | `CBJUMMEB57KRNWPQN4NVXBRYMJ3BH7CYQILWJPEB6KNNU6QUTND4FBJY` |
 
 (1 XLM pool exercised end-to-end: deposit → on-chain root == prover's root → withdraw paid 1 XLM.)
