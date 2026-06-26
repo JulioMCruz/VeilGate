@@ -188,6 +188,30 @@ async function invoke(
   return signAndSend(server, prepared.toXDR());
 }
 
+/**
+ * Submit the withdraw through the server-side relayer so the payout does NOT
+ * originate from the depositor's account (fixes the unlinkability leak, #2).
+ * The proof is bound to `recipient`, so the relayer cannot redirect the payment.
+ */
+async function relayWithdraw(params: {
+  piA: string;
+  piB: string;
+  piC: string;
+  root: string;
+  nullifierHash: string;
+  recipient: string;
+  poolId: string;
+}): Promise<string> {
+  const res = await fetch('/api/relay-withdraw', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = (await res.json().catch(() => ({}))) as { hash?: string; error?: string };
+  if (!res.ok || !data.hash) throw new Error(data.error || 'relayer withdraw failed');
+  return data.hash;
+}
+
 export interface PayResult {
   depositHash: string;
   withdrawHash: string;
@@ -275,15 +299,19 @@ export async function payPrivately(
   // 4. withdraw — verifies on-chain against the recent root, pays the publisher.
   //    The contract re-derives the recipient field from `recipient`, so the proof
   //    is bound to this exact account (a swapped recipient fails verification).
+  //    Submitted via the server-side relayer so the payout does NOT originate from
+  //    the depositor's account — this is what keeps the deposit and the payment
+  //    unlinkable on-chain (QA finding #2).
   onStage?.('paying');
-  const withdrawHash = await invoke(server, from, poolId, 'withdraw', [
-    xdr.ScVal.scvBytes(bufFromHex(g1(proof.pi_a))),
-    xdr.ScVal.scvBytes(bufFromHex(g2(proof.pi_b))),
-    xdr.ScVal.scvBytes(bufFromHex(g1(proof.pi_c))),
-    xdr.ScVal.scvBytes(bufFromHex(be32hex(root))),
-    xdr.ScVal.scvBytes(bufFromHex(be32hex(nullifierHash))),
-    new Address(publisher).toScVal(),
-  ]);
+  const withdrawHash = await relayWithdraw({
+    piA: g1(proof.pi_a),
+    piB: g2(proof.pi_b),
+    piC: g1(proof.pi_c),
+    root: be32hex(root),
+    nullifierHash: be32hex(nullifierHash),
+    recipient: publisher,
+    poolId,
+  });
 
   return {
     depositHash,
