@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { useWallet } from '@/lib/providers/wallet-provider';
-import { loadHistory, domainOf } from '@/lib/history';
+import { loadHistory } from '@/lib/history';
 import { truncate } from '@/components/ui';
 
 interface HermesCtx {
@@ -111,24 +111,6 @@ export function HermesDrawer() {
         );
         break;
       }
-      case '/pay':
-        if (!arg) {
-          reply('Usage: /pay <url> — give me the article URL to unlock.');
-        } else {
-          reply(`Opening the private pay flow for ${domainOf(arg)}. Choose your amount and I’ll generate the proof.`);
-          setTimeout(() => {
-            close();
-            router.push(`/dashboard/pay?url=${encodeURIComponent(arg)}`);
-          }, 700);
-        }
-        break;
-      case '/shield':
-        reply('Shielding pre-mints a payment commitment to use later. Opening Shield…');
-        setTimeout(() => {
-          close();
-          router.push('/dashboard/shield');
-        }, 700);
-        break;
       case '/verify':
         reply(
           arg
