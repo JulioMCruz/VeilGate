@@ -5,8 +5,8 @@ verified independently against Horizon testnet.
 
 - Tester wallet: `GAS45G7S…56MX6BU5` (friendbot-funded).
 - Second destination (to rule out a pay-to-self artifact): `GDRA7SYF…W5O53U`.
-- Relayer account (for the #2 fix): `GDEJXO76…5HDOYD`.
-- The headline privacy finding (#2) has its own deep dive: [`UNLINKABILITY-PLAN.md`](./UNLINKABILITY-PLAN.md).
+- Relayer account (for the #1 fix): `GDEJXO76…5HDOYD`.
+- The headline privacy finding (#1) has its own deep dive: [`UNLINKABILITY-PLAN.md`](./UNLINKABILITY-PLAN.md).
 
 Status legend: ✅ fixed · ↗ escalated · ⏳ pending.
 
@@ -24,11 +24,7 @@ disconnect → landing · wrong network blocked by Freighter.
 
 ## 🐛 Findings & fixes (in order)
 
-### #1 — [MEDIUM] ✅ "Open dashboard →" landed on a broken demo
-- **What:** after connecting, the "Open dashboard →" button (`app/app/connect/page.tsx:42`) did `router.push('/dashboard/pay')` — an out-of-nav demo that moved no value and was itself broken (see #5).
-- **Fix:** push to `/dashboard` (the real home).
-
-### #2 — [HIGH] ✅ Unlinkability was broken on-chain (verified)
+### #1 — [HIGH] ✅ Unlinkability was broken on-chain (verified) — headline
 The pool is supposed to hide *who paid whom*, but the deposit and the withdraw were submitted by the **same account**, so anyone could link payer → publisher.
 - **Evidence (pay to a *different* account, rules out a pay-to-self artifact):**
   - Deposit `5494e105…` → source `GAS45G7S`, seq …645
@@ -37,24 +33,28 @@ The pool is supposed to hide *who paid whom*, but the deposit and the withdraw w
 - **Fix:** route the withdraw through a server-side relayer (different source account). Full plan, required conditions, trust model, and on-chain acceptance criteria in [`UNLINKABILITY-PLAN.md`](./UNLINKABILITY-PLAN.md).
 - **Status:** ✅ implemented + verified on-chain. After the fix, deposit `8607ec24…` source `GAS45G7S` (depositor) and withdraw `37bd4400…` source `GDEJXO76…` (relayer) — different accounts, no shared source. (A fully fresh-recipient end-to-end demo currently needs a pool unaffected by #10.)
 
+### #2 — [MEDIUM] ✅ "Open dashboard →" landed on a broken demo
+- **What:** after connecting, the "Open dashboard →" button (`app/app/connect/page.tsx:42`) did `router.push('/dashboard/pay')` — an out-of-nav demo that moved no value and was itself broken (see #5).
+- **Fix:** push to `/dashboard` (the real home).
+
 ### #3 — [LOW] ✅ Wallet balance was shown rounded
 - **What:** Wallet showed "10,000" while the real balance was `9999.9854` (fees/movement hidden).
 - **Fix:** render the full balance with decimals in `app/app/dashboard/wallet/page.tsx`.
 
 ### #4 — [MEDIUM] ✅ "Testnet" badge was hardcoded; wrong network not detected
 - **What:** the UI always showed "Testnet"; on Main Net it only failed at signing time (Freighter caught it, not the app). `network` was hardcoded in `app/lib/wallet.ts`.
-- **Fix:** read Freighter's actual network (`getNetwork`); the wallet provider exposes it and the Pay screen warns + disables when the wallet isn't on Test Net.
+- **Fix:** read Freighter's actual network (`getNetwork`); the wallet provider exposes it (and keeps it live via polling + refocus), the Pay screen warns + disables when not on Test Net, and a `NetworkPill` next to the address shows the real network.
 
 ### #5 — [MEDIUM] ⏳ Demo `/dashboard/pay` fails to generate a proof (left as-is, unsurfaced)
 - **What:** `/dashboard/pay` → "Something went wrong. The proof could not be generated." It uses `@aztec/bb.js` (UltraHonk), whose WASM fails to init — a legacy stack predating the snarkjs/Groth16 pool flow.
-- **Decision:** the demo page isn't part of the real flow and isn't ours to delete. It's left in place but kept **unsurfaced**: out of nav, not in Hermes's documented commands (`/settle /wallet /history /verify` — the undocumented `/pay` navigation was dropped), and connect now lands on `/dashboard` (#1). The broken demo is no longer reachable from the app UI. Fixing the bb.js stack is out of scope (only ensure what's surfaced works).
+- **Decision:** the demo page isn't part of the real flow and isn't ours to delete. It's left in place but kept **unsurfaced**: out of nav, not in Hermes's documented commands (`/settle /wallet /history /verify` — the undocumented `/pay` navigation was dropped), and connect now lands on `/dashboard` (#2). The broken demo is no longer reachable from the app UI. Fixing the bb.js stack is out of scope (only ensure what's surfaced works).
 
 ### #6 — [MEDIUM] ⏳ Demo `/dashboard/shield` crashes (left as-is, unsurfaced)
 - **What:** `/dashboard/shield` → "Object.defineProperty called on non-object" — same bb.js init failure as #5.
 - **Decision:** same as #5 — left in place, kept unsurfaced (the undocumented Hermes `/shield` navigation was dropped).
 
 ### #7 — [LOW] ✅ Hermes `/history` showed an empty publisher field
-- **What:** `app/components/hermes.tsx:108` rendered `domainOf(r.contentUrl)`, but the pool flow stores the destination in `publisherDomain` (`contentUrl` is empty) — leftover from the "pay a URL" → pool pivot.
+- **What:** `app/components/hermes.tsx` rendered `domainOf(r.contentUrl)`, but the pool flow stores the destination in `publisherDomain` (`contentUrl` is empty) — leftover from the "pay a URL" → pool pivot.
 - **Fix:** render `r.publisherDomain`.
 
 ### #8 — [HIGH] ✅ No check that the destination exists
@@ -66,7 +66,7 @@ The pool is supposed to hide *who paid whom*, but the deposit and the withdraw w
 - **Fix:** persist the note locally **before** depositing (`app/lib/pending.ts`) and clear it on a successful withdraw; the Pay screen lists pending deposits with a "Retry payout" that re-proves and pays via the relayer with no new deposit (`app/components/pending-withdraws.tsx`, `retryWithdraw` in `lib/pool.ts`).
 
 ### #10 — [HIGH / architectural] ↗ Withdraw fails with `RootUnknown` once the oldest deposit ages out
-- **What:** the app rebuilds the Merkle tree by replaying `deposit` events from Soroban RPC, but RPC only retains events for a limited window. Once the earliest deposit (leaf 0) ages out, clients can no longer reconstruct the correct tree, so the computed root never matches the contract's `current_root` → `withdraw` panics with `Error(Contract, #1) = RootUnknown`. This breaks **all** withdrawals from any pool older than the retention window. Independent of #2.
+- **What:** the app rebuilds the Merkle tree by replaying `deposit` events from Soroban RPC, but RPC only retains events for a limited window. Once the earliest deposit (leaf 0) ages out, clients can no longer reconstruct the correct tree, so the computed root never matches the contract's `current_root` → `withdraw` panics with `Error(Contract, #1) = RootUnknown` (that `#1` is the contract's error code, not a finding number). This breaks **all** withdrawals from any pool older than the retention window. Independent of #1.
 - **Evidence:** visible deposit events are indices 1..9 (index 0 aged out; wider RPC windows return empty). The failed withdraw sent root `0a59d8…` (the browser's gap-filled reconstruction); the contract's real `current_root` is `268d1b…`; neither a gap-filled nor a packed reconstruction matches → leaf 0 is genuinely unrecoverable from events.
 - **Fix (architectural — contract-side):** stop depending on RPC event retention. Options: (a) the pool stores commitments in persistent storage and exposes a getter so clients can always fetch the full leaf set; (b) a persistent indexer that records every deposit and serves the leaves; (c) for demos, deploy fresh pools and withdraw within the retention window.
 - **Status:** ↗ escalated to the contract side; cannot be fixed from the app alone.

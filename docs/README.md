@@ -15,9 +15,9 @@
 | File | What it is |
 |---|---|
 | [`QA-AND-FIXES.md`](./QA-AND-FIXES.md) | Phase-1 QA report: what works + all 9 findings, each with its planned fix. On-chain verified vs Horizon testnet. |
-| [`UNLINKABILITY-PLAN.md`](./UNLINKABILITY-PLAN.md) | Deep dive on finding #2: the relayer-based fix, the conditions required to *actually* achieve unlinkability, the trust model, and on-chain acceptance criteria. |
+| [`UNLINKABILITY-PLAN.md`](./UNLINKABILITY-PLAN.md) | Deep dive on finding #1: the relayer-based fix, the conditions required to *actually* achieve unlinkability, the trust model, and on-chain acceptance criteria. |
 
-## The headline finding (#2)
+## The headline finding (#1)
 
 What an on-chain observer sees today:
 

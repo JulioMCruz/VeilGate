@@ -1,6 +1,6 @@
-# Fix Plan — Finding #2 (broken unlinkability)
+# Fix Plan — Finding #1 (broken unlinkability)
 
-> Discussion document. Nothing is implemented yet. Related: `QA-FINDINGS.md` #2 (and #8/#9).
+> Discussion document. Related: `QA-AND-FIXES.md` #1 (and #8/#9).
 > **Wallet decision:** we keep **Freighter**. No passkeys / account abstraction are required to fix privacy.
 
 ## 1. The problem (recap)
@@ -97,6 +97,6 @@ A fix is accepted only when, verified on Horizon:
 
 ## 10. Open decisions
 
-1. Fix #2 via **Option B (own relayer)** for now, with **Option A** as the production path?
+1. Fix #1 via **Option B (own relayer)** for now, with **Option A** as the production path?
 2. Any constraints on running a relayer account (funding, hosting)?
 3. Lands on branch `fix/unlinkable-withdraw-relayer` → PR for review before any merge.
