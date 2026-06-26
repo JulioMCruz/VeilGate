@@ -135,3 +135,11 @@ Copy `.env.example` to `.env.local` to override any of these.
 
 The app is a standard Next.js App Router project and deploys on **Vercel** — live
 at <https://veilgate.vercel.app>.
+
+## Deployment
+
+Auto-deploys to Vercel on every push:
+
+- **Project:** `zknexus/veilgate` · **Root Directory:** `app` · **Framework:** Next.js
+- **Build:** `next build` · **Install:** `npm install` (uses `app/.npmrc` → `legacy-peer-deps`) · **Output:** `.next`
+- **Production branch:** `main` → https://veilgate.vercel.app · pushes to other branches get preview URLs.
