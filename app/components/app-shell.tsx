@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useWallet } from '@/lib/providers/wallet-provider';
@@ -26,8 +27,9 @@ export function TopBar() {
     router.push('/');
   }
   return (
-    <header className="flex items-center justify-between border-b border-veil-900/70 px-4 py-3 sm:px-6">
-      <Link href="/dashboard" className="glow font-bold text-veil-400">
+    <header className="flex items-center justify-between border-b border-veil-900/50 bg-ink-950/80 px-4 py-3 backdrop-blur sm:px-6">
+      <Link href="/dashboard" className="flex items-center gap-2 font-bold tracking-tight text-white">
+        <Image src="/brand/logo-mark.png" alt="" width={26} height={26} className="h-[26px] w-[26px] object-contain" />
         VeilGate
       </Link>
       <div className="flex items-center gap-3">

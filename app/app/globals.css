@@ -27,6 +27,33 @@ body {
   background: radial-gradient(circle, rgba(139, 92, 246, 0.55) 0%, rgba(139, 92, 246, 0) 70%);
 }
 
+/* Brand gradient text — the blue→violet of the logo mark. */
+.text-veilgrad {
+  background: linear-gradient(100deg, #7b8cff 0%, #8b5cf6 55%, #a78bfa 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Scrims for full-bleed art: keep text legible without boxing the image. */
+.scrim-l {
+  background: linear-gradient(
+    to right,
+    #050309 0%,
+    rgba(5, 3, 9, 0.92) 32%,
+    rgba(5, 3, 9, 0.45) 60%,
+    rgba(5, 3, 9, 0) 100%
+  );
+}
+.scrim-b {
+  background: linear-gradient(to top, #050309 0%, rgba(5, 3, 9, 0.6) 40%, rgba(5, 3, 9, 0) 100%);
+}
+
+/* Hairline border that reads premium on near-black. */
+.hairline {
+  border: 1px solid rgba(139, 92, 246, 0.16);
+}
+
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Cascadia Code', monospace;
 }

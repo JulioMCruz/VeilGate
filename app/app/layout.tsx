@@ -1,11 +1,18 @@
 import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 import './globals.css';
 import { WalletProvider } from '@/lib/providers/wallet-provider';
 
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-sans',
+  display: 'swap',
+});
+
 export const metadata: Metadata = {
-  title: 'VeilGate — Private Micropayment Paywall',
+  title: 'VeilGate — Unlinkable Payments on Stellar',
   description:
-    'Pay any content. Reveal nothing. A privacy-preserving paywall on Stellar.',
+    'A shielded pool on Stellar. Pay anyone — your deposit and the payout cannot be linked on-chain. Zero-knowledge, verified on Soroban.',
 };
 
 export default function RootLayout({
@@ -14,8 +21,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className="min-h-screen bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+    <html lang="en" className={`dark ${inter.variable}`}>
+      <body className="min-h-screen bg-ink-950 font-sans text-gray-100 antialiased">
         <WalletProvider>{children}</WalletProvider>
       </body>
     </html>

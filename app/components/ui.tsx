@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from 'react';
 import { useWallet } from '@/lib/providers/wallet-provider';
+import { cn } from '@/lib/cn';
 
 /** Truncate a hex/address string in the middle. */
 export function truncate(s: string, head = 6, tail = 4): string {
@@ -160,7 +161,10 @@ export function ZkTooltip({ term, children }: { term: string; children: ReactNod
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
     <div
-      className={`rounded-2xl border border-veil-100 bg-white p-6 shadow-sm dark:border-veil-900/70 dark:bg-gray-900/60 ${className}`}
+      className={cn(
+        'rounded-2xl border border-veil-500/15 bg-ink-900/60 p-6 shadow-sm backdrop-blur-sm',
+        className
+      )}
     >
       {children}
     </div>
