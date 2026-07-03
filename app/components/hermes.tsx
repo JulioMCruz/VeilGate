@@ -215,7 +215,7 @@ export function HermesFab() {
     <button
       onClick={open}
       aria-label="Open Hermes agent"
-      className="fixed bottom-6 right-6 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-veil-600 text-xl font-bold text-white shadow-lg shadow-veil-900/50 hover:bg-veil-500"
+      className="fixed bottom-20 right-4 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-veil-600 text-xl font-bold text-white shadow-lg shadow-veil-900/50 hover:bg-veil-500 sm:bottom-6 sm:right-6"
     >
       H
     </button>

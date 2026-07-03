@@ -11,7 +11,18 @@ import { Card, CopyButton, PrivacyBadge, ExplorerLink, truncate } from '@/compon
  * verified on-chain, the nullifier that blocks double-spend, and the root the
  * contract checked against. Fed by the local receipt store written on settle.
  */
-export function TxLog({ address, limit }: { address: string | null; limit?: number }) {
+export function TxLog({
+  address,
+  limit,
+  compact,
+}: {
+  address: string | null;
+  limit?: number;
+  /** Short preview row (icon, publisher, denomination, proof badge, time) instead
+   * of the full detail block — used wherever this is a "recent activity" preview
+   * (Home, Wallet) rather than the full Activity page. Same data, less of it shown. */
+  compact?: boolean;
+}) {
   const [items, setItems] = useState<PaymentReceipt[] | null>(null);
 
   useEffect(() => {
@@ -32,7 +43,7 @@ export function TxLog({ address, limit }: { address: string | null; limit?: numb
   return (
     <div className="space-y-2">
       {rows.map((r, i) => (
-        <Row key={`${r.nullifier}-${i}`} r={r} />
+        <Row key={`${r.nullifier}-${i}`} r={r} compact={compact} />
       ))}
       {limit && items.length > limit && (
         <Link
@@ -46,13 +57,60 @@ export function TxLog({ address, limit }: { address: string | null; limit?: numb
   );
 }
 
-function Row({ r }: { r: PaymentReceipt }) {
+// Direction icon derived from which tx hashes the receipt already carries — no
+// new data, just a visual read of what's already loaded.
+function directionIcon(r: PaymentReceipt): string {
+  if (r.depositHash && r.withdrawHash) return '⇄';
+  if (r.depositHash) return '↓';
+  if (r.withdrawHash) return '↑';
+  return '•';
+}
+
+function Row({ r, compact }: { r: PaymentReceipt; compact?: boolean }) {
   const onChain = Boolean(r.withdrawHash);
   const t = new Date(r.timestamp);
+
+  if (compact) {
+    return (
+      <Card className="!p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <span
+              aria-hidden
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-veil-600/20 text-veil-300"
+            >
+              {directionIcon(r)}
+            </span>
+            <div>
+              <p className="text-sm font-medium text-gray-200">{r.publisherDomain || 'publisher'}</p>
+              <div className="mt-0.5 flex items-center gap-2">
+                {r.denomination && (
+                  <span className="text-xs text-veil-300">{r.denomination}</span>
+                )}
+                {onChain && (
+                  <span className="text-[11px] text-green-400">✓ proof verified</span>
+                )}
+              </div>
+            </div>
+          </div>
+          <span className="shrink-0 text-[11px] text-gray-500" title={t.toLocaleString()}>
+            {t.toLocaleTimeString()}
+          </span>
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <Card className="!p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
+          <span
+            aria-hidden
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-veil-600/20 text-veil-300"
+          >
+            {directionIcon(r)}
+          </span>
           <span className="text-sm font-medium text-gray-200">
             {r.publisherDomain || 'publisher'}
           </span>
@@ -81,7 +139,7 @@ function Row({ r }: { r: PaymentReceipt }) {
         )}
       </div>
 
-      <dl className="mono mt-3 space-y-1.5 text-xs">
+      <dl className="mono mt-3 grid grid-cols-1 gap-x-4 gap-y-1.5 text-xs sm:grid-cols-2">
         <KV k="Nullifier">
           <span className="text-gray-300">{truncate(r.nullifier, 10, 6)}</span>
           <CopyButton value={r.nullifier} label="nullifier" />

@@ -21,11 +21,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <HermesProvider>
-      <div className="flex min-h-screen flex-col">
+      <div className="flex h-screen flex-col">
         <TopBar />
-        <div className="flex flex-1">
+        <div className="flex min-h-0 flex-1">
           <NavRail />
-          <main className="flex-1 px-4 pb-24 pt-6 sm:px-8 sm:pb-10">{children}</main>
+          <main className="flex-1 overflow-y-auto px-4 pb-24 pt-6 sm:px-8 sm:pb-10">{children}</main>
         </div>
         <BottomTabBar />
         <HermesFab />

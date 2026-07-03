@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
@@ -21,10 +22,14 @@ export default function ConnectPage() {
         ← Back to home
       </Link>
 
-      <div className="rounded-2xl border border-veil-900/70 bg-gray-900/60 p-8">
-        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-veil-600 text-xl text-white">
-          ⛓
-        </div>
+      <div className="hairline rounded-2xl bg-ink-900/60 p-8">
+        <Image
+          src="/brand/mascot.png"
+          alt=""
+          width={64}
+          height={64}
+          className="mb-4 h-16 w-16 animate-float object-contain"
+        />
         <h1 className="text-2xl font-bold">Connect your Freighter wallet</h1>
         <p className="mt-2 text-sm text-gray-400">
           Freighter is a free browser extension that manages your Stellar keys. VeilGate

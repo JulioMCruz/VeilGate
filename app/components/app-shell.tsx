@@ -1,10 +1,12 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useWallet } from '@/lib/providers/wallet-provider';
 import { useHermes } from '@/components/hermes';
 import { NetworkPill, CopyButton, truncate } from '@/components/ui';
+import { cn } from '@/lib/cn';
 
 // Only the real, on-chain XLM settlement flow is surfaced. The earlier
 // content-unlock / shield routes are proving demos that move no value, so they
@@ -26,8 +28,9 @@ export function TopBar() {
     router.push('/');
   }
   return (
-    <header className="flex items-center justify-between border-b border-veil-900/70 px-4 py-3 sm:px-6">
-      <Link href="/dashboard" className="glow font-bold text-veil-400">
+    <header className="flex items-center justify-between border-b border-veil-900/50 bg-ink-950/80 px-4 py-3 backdrop-blur sm:px-6">
+      <Link href="/" className="flex items-center gap-2 text-lg font-bold tracking-tight text-white">
+        <Image src="/brand/logo-mark.png" alt="" width={36} height={25} className="h-[25px] w-auto object-contain" />
         VeilGate
       </Link>
       <div className="flex items-center gap-3">
@@ -53,29 +56,31 @@ export function TopBar() {
 export function NavRail() {
   const pathname = usePathname();
   const { open } = useHermes();
+
   return (
-    <nav className="hidden w-44 shrink-0 flex-col gap-1 border-r border-veil-900/70 p-3 sm:flex">
+    <nav className="hidden w-56 shrink-0 flex-col gap-1 overflow-y-auto border-r border-veil-900/50 p-3 sm:flex">
       {NAV.map((item) => {
         const active = pathname === item.href;
         return (
           <Link
             key={item.href}
             href={item.href}
-            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm ${
+            className={cn(
+              'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition',
               active
-                ? 'border-l-2 border-veil-500 bg-veil-900/40 font-medium text-veil-200'
-                : 'text-gray-400 hover:bg-veil-900/30 hover:text-gray-200'
-            }`}
+                ? 'bg-veil-600/15 font-medium text-veil-200 hairline'
+                : 'text-gray-400 hover:bg-ink-900/60 hover:text-gray-200'
+            )}
           >
             <span aria-hidden>{item.icon}</span>
             {item.label}
           </Link>
         );
       })}
-      <hr className="my-2 border-veil-900/70" />
+      <hr className="my-2 border-veil-900/50" />
       <button
         onClick={open}
-        className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-400 hover:bg-veil-900/30 hover:text-gray-200"
+        className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-gray-400 transition hover:bg-ink-900/60 hover:text-gray-200"
       >
         <span aria-hidden>✦</span>
         Hermes
