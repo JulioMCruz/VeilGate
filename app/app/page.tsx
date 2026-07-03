@@ -1,5 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import { HeroVideo } from '@/components/hero-video';
 
 /**
  * Landing — the brand at full strength (art direction: near-black canvas, one
@@ -10,75 +11,73 @@ import Link from 'next/link';
 export default function LandingPage() {
   return (
     <main className="relative overflow-hidden">
-      {/* Topbar */}
-      <header className="relative z-20 mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
-        <span className="flex items-center gap-2.5">
-          <Image src="/brand/logo-mark.png" alt="" width={34} height={34} className="h-[34px] w-[34px] object-contain" />
-          <span className="text-lg font-bold tracking-tight text-white">VeilGate</span>
-        </span>
-        <nav className="hidden items-center gap-8 text-sm text-gray-400 sm:flex">
-          <a href="#how" className="transition hover:text-white">How it works</a>
-          <a href="#privacy" className="transition hover:text-white">Privacy</a>
-          <a
-            href="https://github.com/JulioMCruz/VeilGate"
-            target="_blank"
-            rel="noreferrer noopener"
-            className="transition hover:text-white"
+      {/* Header + hero fill exactly one screen; the feature strip rests on its
+          bottom edge no matter the viewport height. */}
+      <div className="flex min-h-screen flex-col">
+        {/* Topbar */}
+        <header className="relative z-20 mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between px-6 py-5">
+          <span className="flex items-center gap-2.5">
+            <Image src="/brand/logo-mark.png" alt="" width={44} height={30} className="h-[30px] w-auto object-contain" />
+            <span className="text-xl font-bold tracking-tight text-white">VeilGate</span>
+          </span>
+          <nav className="hidden items-center gap-8 text-sm text-gray-400 sm:flex">
+            <a href="#how" className="transition hover:text-white">How it works</a>
+            <a href="#privacy" className="transition hover:text-white">Privacy</a>
+            <a
+              href="https://github.com/JulioMCruz/VeilGate"
+              target="_blank"
+              rel="noreferrer noopener"
+              className="transition hover:text-white"
+            >
+              GitHub
+            </a>
+            <Link href="/pitchdeck" className="transition hover:text-white">Learn more</Link>
+          </nav>
+          <Link
+            href="/connect"
+            className="hairline rounded-xl px-4 py-2 text-sm font-medium text-gray-200 transition hover:bg-veil-900/30 hover:text-white"
           >
-            GitHub
-          </a>
-        </nav>
-        <Link
-          href="/connect"
-          className="hairline rounded-xl px-4 py-2 text-sm font-medium text-gray-200 transition hover:bg-veil-900/30 hover:text-white"
-        >
-          Open app →
-        </Link>
-      </header>
+            Open app →
+          </Link>
+        </header>
 
-      {/* Hero — full-bleed art, golden split, one focal point */}
-      <section className="relative">
-        <div className="absolute inset-0 -z-10">
-          {/* Static art is the base layer (and the reduced-motion / no-js fallback)… */}
-          <Image
-            src="/brand/hero-veil.png"
-            alt=""
-            fill
-            priority
-            className="object-cover object-[72%_center]"
-            sizes="100vw"
-          />
-          {/* …and the Kling loop plays over it when motion is allowed. */}
-          <video
-            autoPlay
-            muted
-            loop
-            playsInline
-            poster="/brand/hero-veil.png"
-            className="absolute inset-0 h-full w-full object-cover object-[72%_center] motion-reduce:hidden"
-          >
-            <source src="/brand/hero-veil.mp4" type="video/mp4" />
-          </video>
-          <div className="scrim-l absolute inset-0" />
-          <div className="scrim-b absolute inset-x-0 bottom-0 h-40" />
-        </div>
+        {/* Hero — full-bleed art, golden split, one focal point */}
+        <section className="relative flex flex-1 flex-col justify-between">
+          <div className="absolute inset-0 -z-10">
+            {/* Static art is the base layer (and the reduced-motion / no-js fallback)… */}
+            <Image
+              src="/brand/hero-veil.png"
+              alt=""
+              fill
+              priority
+              className="object-cover object-[72%_center]"
+              sizes="100vw"
+            />
+            {/* …and the Kling loop plays over it for every visitor. */}
+            <HeroVideo />
+            <div className="scrim-l absolute inset-0" />
+            <div className="scrim-b absolute inset-x-0 bottom-0 h-40" />
+          </div>
 
-        <div className="mx-auto grid max-w-6xl gap-8 px-6 pb-24 pt-16 sm:pt-24 lg:grid-cols-[62fr_38fr] lg:pb-36">
-          <div className="max-w-xl">
+          {/* Top group: badge + headline. On mobile this is ALL that sits up here
+              (CTAs/trust row move to the bottom group below); on sm+ it holds the
+              full block (description + CTAs + trust row) as before. */}
+          <div className="mx-auto grid max-w-6xl gap-6 px-6 pt-6 sm:pt-10 lg:grid-cols-[62fr_38fr]">
+          <div className="max-w-xl lg:-translate-x-[9%] lg:translate-y-[25%]">
             <p className="hairline inline-flex items-center gap-2 rounded-full bg-ink-900/70 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-veil-300 backdrop-blur animate-fade-up">
               <span className="h-1.5 w-1.5 rounded-full bg-veil-400" /> Private payments on Stellar
             </p>
-            <h1 className="mt-7 text-display font-bold text-white sm:text-display-lg animate-fade-up [animation-delay:80ms]">
+            <h1 className="mt-5 text-4xl font-bold text-white sm:text-display lg:text-display-lg animate-fade-up [animation-delay:80ms]">
               Pay without
               <br />
               leaving <span className="text-veilgrad">a trace.</span>
             </h1>
-            <p className="mt-6 text-lg leading-relaxed text-gray-400 animate-fade-up [animation-delay:160ms]">
+            <p className="mt-4 hidden text-lg leading-relaxed text-gray-400 animate-fade-up [animation-delay:160ms] sm:block">
               VeilGate is a shielded pool on Stellar. Your deposit and the payout are two
               transactions <span className="text-gray-200">no one can link on-chain</span> — the
-              publisher gets paid in full, and nobody learns it came from you.
+              publisher gets paid in full, and nobody knows it came from you.
             </p>
-            <div className="mt-9 flex flex-wrap items-center gap-3 animate-fade-up [animation-delay:240ms]">
+            <div className="mt-7 hidden flex-wrap items-center gap-3 sm:flex">
               <Link
                 href="/connect"
                 className="rounded-xl bg-veil-600 px-7 py-3.5 text-base font-medium text-white shadow-lg shadow-veil-900/50 transition hover:bg-veil-500"
@@ -92,7 +91,7 @@ export default function LandingPage() {
                 How it works
               </a>
             </div>
-            <div className="mt-12 flex flex-wrap items-center gap-x-7 gap-y-2 text-xs text-gray-500 animate-fade-up [animation-delay:320ms]">
+            <div className="mt-8 hidden flex-wrap items-center gap-x-7 gap-y-2 text-xs text-gray-500 sm:flex">
               <span className="flex items-center gap-1.5"><span className="text-veil-400">◈</span> Groth16 verified on Soroban</span>
               <span className="flex items-center gap-1.5"><span className="text-veil-400">⬡</span> Freighter wallet</span>
               <span className="flex items-center gap-1.5"><span className="text-veil-400">&lt;/&gt;</span> Open source</span>
@@ -102,25 +101,45 @@ export default function LandingPage() {
           {/* Empty column — keeps the golden-rectangle split so the art breathes on the right. */}
           <div aria-hidden className="hidden lg:block" />
         </div>
-      </section>
 
-      {/* Feature strip */}
-      <section className="mx-auto max-w-6xl px-6">
-        <div className="hairline grid gap-8 rounded-2xl bg-ink-900/50 p-8 backdrop-blur sm:grid-cols-2 lg:grid-cols-4">
-          <Feature icon="🔗" title="Unlinkable by design">
-            The deposit and the payout are separate transactions with no on-chain connection.
-          </Feature>
-          <Feature icon="⬡" title="Prove, don’t reveal">
-            A Groth16 proof is generated in your browser. The note secret never leaves your device.
-          </Feature>
-          <Feature icon="👥" title="Blend into the crowd">
-            Fixed denominations (0.1 / 1 / 10 XLM) — every payment looks identical to the whole pool.
-          </Feature>
-          <Feature icon="🎯" title="Recipient-locked">
-            The proof is bound to the payee on-chain. Swap the address and it’s rejected.
-          </Feature>
-        </div>
-      </section>
+          {/* Bottom group: mobile-only CTAs + trust row (kept close to the feature
+              strip below), then the feature strip itself (all breakpoints). */}
+          <div>
+            <div className="px-6 sm:hidden">
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <Link
+                  href="/connect"
+                  className="rounded-xl bg-veil-600 px-7 py-3.5 text-base font-medium text-white shadow-lg shadow-veil-900/50 transition hover:bg-veil-500"
+                >
+                  Pay privately →
+                </Link>
+                <a
+                  href="#how"
+                  className="hairline rounded-xl bg-ink-900/60 px-6 py-3.5 text-base text-gray-300 backdrop-blur transition hover:text-white"
+                >
+                  How it works
+                </a>
+              </div>
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-x-7 gap-y-2 text-xs text-gray-500">
+                <span className="flex items-center gap-1.5"><span className="text-veil-400">◈</span> Groth16 verified on Soroban</span>
+                <span className="flex items-center gap-1.5"><span className="text-veil-400">⬡</span> Freighter wallet</span>
+                <span className="flex items-center gap-1.5"><span className="text-veil-400">&lt;/&gt;</span> Open source</span>
+              </div>
+            </div>
+
+            {/* Feature strip — titles only (no descriptions) so it stays short;
+                same max-width as the rest of the page's content. */}
+            <div className="relative mx-auto mt-6 w-full max-w-6xl px-6 pb-6 sm:mt-0">
+              <div className="hairline grid grid-cols-2 gap-4 rounded-2xl bg-ink-900/70 p-4 backdrop-blur sm:p-5 lg:grid-cols-4">
+                <Feature icon="/brand/icon-unlinkable.png" title="Unlinkable by design" />
+                <Feature icon="/brand/icon-prove.png" title="Prove, don’t reveal" />
+                <Feature icon="/brand/icon-crowd.png" title="Blend into the crowd" />
+                <Feature icon="/brand/icon-locked.png" title="Recipient-locked" />
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
 
       {/* How it works */}
       <section id="how" className="mx-auto max-w-6xl scroll-mt-16 px-6 py-24">
@@ -188,13 +207,6 @@ export default function LandingPage() {
             aria-hidden
             className="proof-glow pointer-events-none absolute left-1/2 top-1/2 -z-0 h-[420px] w-[420px] -translate-x-1/2 -translate-y-1/2 animate-proof-pulse"
           />
-          <Image
-            src="/brand/mascot.png"
-            alt=""
-            width={96}
-            height={96}
-            className="relative mx-auto mb-6 h-24 w-24 animate-float object-contain"
-          />
           <h2 className="relative text-display-sm font-bold text-white sm:text-display">
             Disappear into the crowd.
           </h2>
@@ -220,12 +232,13 @@ export default function LandingPage() {
   );
 }
 
-function Feature({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
+function Feature({ icon, title }: { icon: string; title: string }) {
   return (
-    <div>
-      <div className="text-xl">{icon}</div>
-      <h3 className="mt-3 font-semibold text-gray-100">{title}</h3>
-      <p className="mt-1.5 text-sm leading-relaxed text-gray-500">{children}</p>
+    <div className="flex items-center gap-3">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center">
+        <Image src={icon} alt="" width={36} height={36} className="h-full w-full object-contain" />
+      </span>
+      <h3 className="font-semibold text-gray-100">{title}</h3>
     </div>
   );
 }

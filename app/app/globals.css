@@ -58,6 +58,64 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Cascadia Code', monospace;
 }
 
+/* CSS-only violet particle field — ambient texture for slides without a
+   full-bleed art background (pitch deck). Base layer drifts slowly; two
+   pseudo-element layers of dots twinkle (opacity fade in/out) on their own
+   out-of-sync timers so the sparkle reads as randomized, not a single pulse. */
+.particle-field {
+  background-image:
+    radial-gradient(1.5px 1.5px at 20% 30%, rgba(167, 139, 250, 0.45) 50%, transparent),
+    radial-gradient(2px 2px at 75% 70%, rgba(139, 92, 246, 0.4) 50%, transparent),
+    radial-gradient(1px 1px at 40% 85%, rgba(167, 139, 250, 0.35) 50%, transparent),
+    radial-gradient(1.5px 1.5px at 88% 15%, rgba(139, 92, 246, 0.4) 50%, transparent);
+  background-repeat: repeat;
+  background-size: 640px 640px, 720px 720px, 560px 560px, 680px 680px;
+  animation: particle-drift 80s linear infinite;
+}
+
+.particle-field::before,
+.particle-field::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.particle-field::before {
+  background-image:
+    radial-gradient(1.5px 1.5px at 15% 55%, rgba(196, 181, 253, 0.85) 50%, transparent),
+    radial-gradient(2px 2px at 65% 20%, rgba(167, 139, 250, 0.75) 50%, transparent);
+  background-repeat: repeat;
+  background-size: 700px 700px, 600px 600px;
+  animation: particle-twinkle 4.2s ease-in-out infinite;
+}
+
+.particle-field::after {
+  background-image:
+    radial-gradient(1px 1px at 82% 65%, rgba(196, 181, 253, 0.8) 50%, transparent),
+    radial-gradient(1.5px 1.5px at 30% 90%, rgba(139, 92, 246, 0.75) 50%, transparent);
+  background-repeat: repeat;
+  background-size: 650px 650px, 750px 750px;
+  animation: particle-twinkle 5.6s ease-in-out infinite -2.4s;
+}
+
+@keyframes particle-drift {
+  from {
+    background-position: 0 0, 0 0, 0 0, 0 0;
+  }
+  to {
+    background-position: 320px 320px, -360px 360px, 280px -280px, -340px 340px;
+  }
+}
+
+@keyframes particle-twinkle {
+  0%, 100% {
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-proof-pulse,
   .animate-ring-expand,
@@ -66,5 +124,10 @@ body {
   }
   .proof-glow {
     opacity: 0.6;
+  }
+  .particle-field,
+  .particle-field::before,
+  .particle-field::after {
+    animation: none;
   }
 }

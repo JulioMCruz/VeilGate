@@ -71,9 +71,9 @@ export function PendingWithdraws() {
         {pending.map((p) => (
           <div
             key={p.id}
-            className="flex items-center justify-between gap-3 rounded-lg border border-amber-900/40 bg-gray-900/60 px-3 py-2"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-900/40 bg-gray-900/60 px-3 py-2"
           >
-            <div className="text-xs">
+            <div className="min-w-0 text-xs">
               <span className="text-gray-200">{p.denomLabel}</span>
               <span className="text-gray-500"> → {truncate(p.publisher, 4, 4)}</span>
               <span className="text-gray-600"> · {new Date(p.createdAt).toLocaleString()}</span>

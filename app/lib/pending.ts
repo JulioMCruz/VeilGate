@@ -12,6 +12,8 @@
  */
 'use client';
 
+import { useEffect, useState } from 'react';
+
 export interface PendingNote {
   /** Stable id = commitment (32-byte hex). */
   id: string;
@@ -68,4 +70,26 @@ export function removePending(address: string, id: string) {
     address,
     loadPending(address).filter((p) => p.id !== id)
   );
+}
+
+/**
+ * Live total of shielded (deposited, not yet paid out) XLM for this wallet —
+ * the real "pending payouts" figure shown next to the wallet balance. Parses
+ * the numeric part of each note's `denomLabel` (e.g. "1 XLM" -> 1); shared by
+ * Home and Wallet so the two stay in sync and the calc isn't duplicated.
+ */
+export function useShieldedTotal(address: string | null): number {
+  const [total, setTotal] = useState(0);
+  useEffect(() => {
+    if (!address) {
+      setTotal(0);
+      return;
+    }
+    const calc = () =>
+      setTotal(loadPending(address).reduce((sum, n) => sum + (parseFloat(n.denomLabel) || 0), 0));
+    calc();
+    window.addEventListener('veilgate:pending', calc);
+    return () => window.removeEventListener('veilgate:pending', calc);
+  }, [address]);
+  return total;
 }
